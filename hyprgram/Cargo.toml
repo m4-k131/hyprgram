@@ -1,0 +1,16 @@
+[package]
+name = "hyprgram"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+hyprgram-core = { path = "../hyprgram-core" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+bytemuck = { version = "1.21", features = ["derive"] }
+iced = { version = "0.14", default-features = false, features = ["wgpu"] }
+iced_layershell = "0.16"
+wgpu = "23.0"
