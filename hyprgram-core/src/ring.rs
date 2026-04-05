@@ -1,9 +1,9 @@
-use ringbuf::traits::{Consumer, Producer};
-use ringbuf::{HeapConsumer, HeapProducer, HeapRb};
+use ringbuf::traits::{Consumer, Observer, Producer, Split};
+use ringbuf::{HeapCons, HeapProd, HeapRb};
 use std::sync::{Arc, Mutex};
 
 pub struct SampleRing {
-    rb: Arc<Mutex<(HeapProducer<f32>, HeapConsumer<f32>)>>,
+    rb: Arc<Mutex<(HeapProd<f32>, HeapCons<f32>)>>,
 }
 
 impl SampleRing {
@@ -62,6 +62,6 @@ impl SampleRing {
     pub fn available(&self) -> usize {
         let g = self.rb.lock().unwrap();
         let (_, c) = &*g;
-        c.len()
+        c.occupied_len()
     }
 }

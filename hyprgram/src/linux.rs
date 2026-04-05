@@ -1,31 +1,30 @@
-use crate::spectrogram::SpectrogramProgram;
 use crate::Args;
+use hyprgram::dev::{effective_spectrogram_history, SpectrogramDevConfig};
+use hyprgram::spectrogram::SpectrogramProgram;
 use hyprgram_core::{SampleRing, SpectrumConfig, SpectrumProcessor};
-use iced::widget::shader::Shader;
 use iced::widget::container;
-use iced::{Color, Element, Length, Task};
-use iced_layershell::reexport::{Anchor, Layer};
-use iced_layershell::settings::{LayerShellSettings, Settings, StartMode};
-use iced_layershell::{application, to_layer_message};
+use iced::widget::shader::Shader;
+use iced::{Element, Length, Size, Subscription, Task};
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-#[to_layer_message]
 #[derive(Debug, Clone)]
-pub enum Message {
+enum Message {
     Tick,
-    IcedEvent(iced::Event),
 }
 
 pub struct App {
-    rx: std::sync::mpsc::Receiver<Vec<f32>>,
     pub prog: SpectrogramProgram,
 }
 
 impl App {
     fn bootstrap(args: Args) -> Self {
-        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<f32>>(4);
-        let column = Arc::new(Mutex::new(vec![0.0f32; args.log_bins]));
+        let rtl = !args.legacy_vertical_scroll;
+        let history = effective_spectrogram_history(args.history, args.width, args.height, rtl);
+        let backlog_cap = (history as usize).saturating_mul(8).saturating_add(256).max(1024);
+        let pending_spectra = Arc::new(Mutex::new(VecDeque::new()));
+        let pending_w = pending_spectra.clone();
         let ring = SampleRing::new((args.sample_rate as usize) * 2);
         let _pw = hyprgram_core::pipewire::spawn_capture(args.target_object.clone(), ring.clone());
         let mut cfg = SpectrumConfig::default();
@@ -44,75 +43,51 @@ impl App {
                 }
                 let mut cols = Vec::new();
                 proc.push_samples(&scratch[..n], &mut cols);
+                let mut q = pending_w.lock().unwrap();
                 for c in cols {
-                    let _ = tx.try_send(c);
+                    while q.len() >= backlog_cap {
+                        q.pop_front();
+                    }
+                    q.push_back(c);
                 }
             }
         });
         Self {
-            rx,
             prog: SpectrogramProgram {
-                column,
+                pending_spectra,
                 bins: args.log_bins as u32,
-                history: args.history,
+                history,
+                dev: SpectrogramDevConfig {
+                    scroll_right_to_left: rtl,
+                },
             },
         }
     }
 }
 
-fn namespace() -> String {
-    "hyprgram".to_string()
-}
-
-fn update(app: &mut App, message: Message) -> Task<Message> {
+fn update(_app: &mut App, message: Message) -> Task<Message> {
     match message {
-        Message::Tick => {
-            while let Ok(c) = app.rx.try_recv() {
-                *app.prog.column.lock().unwrap() = c;
-            }
-            Task::none()
-        }
-        Message::IcedEvent(_) => Task::none(),
+        Message::Tick => Task::none(),
     }
 }
 
-fn view(app: &App) -> Element<Message> {
+fn view(app: &App) -> Element<'_, Message> {
     let sh = Shader::new(app.prog.clone()).width(Length::Fill).height(Length::Fill);
     container(sh).width(Length::Fill).height(Length::Fill).into()
 }
 
-fn subscription(_app: &App) -> iced::Subscription<Message> {
-    iced::Subscription::batch(vec![
-        iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick),
-        iced::event::listen().map(Message::IcedEvent),
-    ])
-}
-
-fn style(_app: &App, theme: &iced::Theme) -> iced::theme::Style {
-    iced::theme::Style {
-        background_color: Color::TRANSPARENT,
-        text_color: theme.palette().text,
-    }
+fn subscription(_app: &App) -> Subscription<Message> {
+    iced::time::every(std::time::Duration::from_millis(16)).map(|_| Message::Tick)
 }
 
 pub fn run(args: Args) -> anyhow::Result<()> {
-    let anchor = Anchor::Bottom | Anchor::Left | Anchor::Right;
-    let ls = LayerShellSettings {
-        anchor,
-        layer: Layer::Background,
-        exclusive_zone: 0,
-        size: Some((args.width, args.height)),
-        start_mode: StartMode::Active,
-        ..Default::default()
-    };
-    let settings = Settings {
-        layer_settings: ls,
-        ..Settings::default()
-    };
-    application(move || App::bootstrap(args), namespace, update, view)
+    let size = Size::new(args.width as f32, args.height as f32);
+    iced::application(move || App::bootstrap(args.clone()), update, view)
+        .title("hyprgram")
+        .window_size(size)
+        .centered()
         .subscription(subscription)
-        .settings(settings)
-        .style(style)
+        .theme(iced::Theme::Dark)
         .run()
         .map_err(|e| anyhow::anyhow!("{e:?}"))
 }

@@ -6,6 +6,9 @@ pub mod error;
 pub mod pipewire;
 pub mod ring;
 
-pub use dsp::{SpectrumConfig, SpectrumProcessor};
+pub use dsp::{
+    normalize_hop_size, SpectrumConfig, SpectrumProcessor, DEFAULT_FFT_HOP_SAMPLES,
+    DEFAULT_FFT_WINDOW_SAMPLES,
+};
 pub use error::CoreError;
 pub use ring::SampleRing;

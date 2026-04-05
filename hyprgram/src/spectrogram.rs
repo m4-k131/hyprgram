@@ -1,6 +1,9 @@
+use crate::dev::SpectrogramDevConfig;
 use iced::mouse::{Cursor, Interaction};
 use iced::widget::shader;
+use iced::wgpu;
 use iced::Rectangle;
+use std::collections::VecDeque;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
@@ -9,7 +12,7 @@ struct Uniforms {
     scroll: f32,
     tex_w: f32,
     tex_h: f32,
-    _pad: f32,
+    mode: u32,
 }
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var tex: texture_2d<f32>;
@@ -41,8 +44,15 @@ fn viridis(t: f32) -> vec3<f32> {
 }
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let tx = in.uv.x;
-    let ty = fract(in.uv.y + u.scroll);
+    var tx: f32;
+    var ty: f32;
+    if (u.mode == 0u) {
+        tx = in.uv.y;
+        ty = fract(in.uv.x + u.scroll);
+    } else {
+        tx = in.uv.x;
+        ty = fract(in.uv.y + u.scroll);
+    }
     let mag = textureSample(tex, samp, vec2(tx, ty)).r;
     let c = viridis(mag);
     return vec4(c, 1.0);
@@ -55,20 +65,23 @@ struct Uniforms {
     scroll: f32,
     tex_w: f32,
     tex_h: f32,
-    _pad: f32,
+    mode: u32,
 }
 
 #[derive(Clone)]
 pub struct SpectrogramProgram {
-    pub column: Arc<Mutex<Vec<f32>>>,
+    /// One `Vec<f32>` spectrum per STFT hop; drained in `prepare` (multiple rows per frame possible).
+    pub pending_spectra: Arc<Mutex<VecDeque<Vec<f32>>>>,
     pub bins: u32,
     pub history: u32,
+    pub dev: SpectrogramDevConfig,
 }
 
 pub struct SpectrogramPrimitive {
-    pub column: Arc<Mutex<Vec<f32>>>,
+    pub pending_spectra: Arc<Mutex<VecDeque<Vec<f32>>>>,
     pub bins: u32,
     pub history: u32,
+    pub dev: SpectrogramDevConfig,
 }
 
 impl fmt::Debug for SpectrogramPrimitive {
@@ -76,6 +89,7 @@ impl fmt::Debug for SpectrogramPrimitive {
         f.debug_struct("SpectrogramPrimitive")
             .field("bins", &self.bins)
             .field("history", &self.history)
+            .field("dev", &self.dev)
             .finish()
     }
 }
@@ -134,8 +148,8 @@ impl shader::Pipeline for SpectrogramGpu {
             label: Some("hyprgram-sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -157,14 +171,14 @@ impl shader::Pipeline for SpectrogramGpu {
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
                         view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
                     },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                     count: None,
                 },
             ],
@@ -272,39 +286,48 @@ impl shader::Primitive for SpectrogramPrimitive {
             pipeline.write_row = 0;
         }
         let mut row = vec![0.0f32; w as usize];
-        if let Ok(g) = self.column.lock() {
-            let n = g.len().min(row.len());
-            row[..n].copy_from_slice(&g[..n]);
+        let mut last_y: Option<u32> = None;
+        loop {
+            let col = { self.pending_spectra.lock().unwrap().pop_front() };
+            let Some(col) = col else { break };
+            let n = col.len().min(row.len());
+            row[..n].copy_from_slice(&col[..n]);
+            if n < row.len() {
+                row[n..].fill(0.0);
+            }
+            let y = pipeline.write_row % h;
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &pipeline.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d { x: 0, y, z: 0 },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                bytemuck::cast_slice(&row),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * w),
+                    rows_per_image: Some(1),
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+            );
+            pipeline.write_row = pipeline.write_row.wrapping_add(1);
+            last_y = Some(y);
         }
-        let y = pipeline.write_row % h;
-        queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &pipeline.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d { x: 0, y, z: 0 },
-                aspect: wgpu::TextureAspect::All,
-            },
-            bytemuck::cast_slice(&row),
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * w),
-                rows_per_image: Some(1),
-            },
-            wgpu::Extent3d {
-                width: w,
-                height: 1,
-                depth_or_array_layers: 1,
-            },
-        );
-        pipeline.write_row = pipeline.write_row.wrapping_add(1);
-        let scroll = (y as f32 + 1.0) / (h as f32);
-        let u = Uniforms {
-            scroll,
-            tex_w: w as f32,
-            tex_h: h as f32,
-            _pad: 0.0,
-        };
-        queue.write_buffer(&pipeline.uniform, 0, bytemuck::bytes_of(&u));
+        if let Some(y) = last_y {
+            let scroll = (y as f32 + 1.0) / (h as f32);
+            let u = Uniforms {
+                scroll,
+                tex_w: w as f32,
+                tex_h: h as f32,
+                mode: if self.dev.scroll_right_to_left { 0 } else { 1 },
+            };
+            queue.write_buffer(&pipeline.uniform, 0, bytemuck::bytes_of(&u));
+        }
     }
     fn draw(
         &self,
@@ -328,9 +351,10 @@ impl<Message: 'static> shader::Program<Message> for SpectrogramProgram {
         _bounds: Rectangle,
     ) -> Self::Primitive {
         SpectrogramPrimitive {
-            column: self.column.clone(),
+            pending_spectra: self.pending_spectra.clone(),
             bins: self.bins,
             history: self.history,
+            dev: self.dev,
         }
     }
     fn mouse_interaction(

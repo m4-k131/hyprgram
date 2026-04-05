@@ -4,6 +4,21 @@ use rustfft::num_complex::Complex;
 use std::f32::consts::PI;
 use std::sync::Arc;
 
+/// Default real FFT length: Hann STFT window size in samples. Frequency bin spacing ≈ `sample_rate / window_size`.
+pub const DEFAULT_FFT_WINDOW_SAMPLES: usize = 20480;
+/// Default hop between STFT frames (samples). ~5.3 ms @ 48 kHz — coarse enough for ~1/128-type timing vs CPU; raise `fft` / lower hop for heavier overlap.
+pub const DEFAULT_FFT_HOP_SAMPLES: usize = 256;
+
+/// STFT hop must satisfy `1 <= hop <= window_size`. `hop == 0` is treated as “use half window” (50% overlap). Larger values are clamped to `window_size`.
+pub fn normalize_hop_size(window_size: usize, hop: usize) -> usize {
+    if window_size < 1 {
+        return 1;
+    }
+    let max_h = window_size;
+    let h = if hop == 0 { (window_size / 2).max(1) } else { hop };
+    h.clamp(1, max_h)
+}
+
 #[derive(Clone, Debug)]
 pub struct SpectrumConfig {
     pub window_size: usize,
@@ -19,8 +34,8 @@ pub struct SpectrumConfig {
 impl Default for SpectrumConfig {
     fn default() -> Self {
         Self {
-            window_size: 2048,
-            hop_size: 1024,
+            window_size: DEFAULT_FFT_WINDOW_SAMPLES,
+            hop_size: DEFAULT_FFT_HOP_SAMPLES,
             sample_rate: 48000,
             log_bins: 256,
             f_min_hz: 20.0,
@@ -41,13 +56,11 @@ pub struct SpectrumProcessor {
 }
 
 impl SpectrumProcessor {
-    pub fn new(cfg: SpectrumConfig) -> Result<Self, CoreError> {
+    pub fn new(mut cfg: SpectrumConfig) -> Result<Self, CoreError> {
         if cfg.window_size < 8 {
             return Err(CoreError::Dsp("window_size too small".into()));
         }
-        if cfg.hop_size == 0 || cfg.hop_size > cfg.window_size {
-            return Err(CoreError::Dsp("invalid hop_size".into()));
-        }
+        cfg.hop_size = normalize_hop_size(cfg.window_size, cfg.hop_size);
         let mut planner = RealFftPlanner::<f32>::new();
         let r2c = planner.plan_fft_forward(cfg.window_size);
         let spectrum = r2c.make_output_vec();
@@ -57,13 +70,14 @@ impl SpectrumProcessor {
         for (i, w) in hann.iter_mut().enumerate() {
             *w = 0.5 * (1.0 - (2.0 * PI * i as f32 / n1).cos());
         }
+        let pending_cap = cfg.window_size * 2;
         Ok(Self {
             cfg,
             r2c,
             hann,
             work_input,
             spectrum,
-            pending: Vec::with_capacity(cfg.window_size * 2),
+            pending: Vec::with_capacity(pending_cap),
         })
     }
     pub fn set_sample_rate(&mut self, sr: u32) {
@@ -109,5 +123,22 @@ impl SpectrumProcessor {
             let u = ((db - self.cfg.db_floor) / (self.cfg.db_ceil - self.cfg.db_floor)).clamp(0.0, 1.0);
             col[i] = u;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn hop_clamps_high() {
+        assert_eq!(normalize_hop_size(16384, 32768), 16384);
+    }
+    #[test]
+    fn hop_zero_is_half_window() {
+        assert_eq!(normalize_hop_size(16384, 0), 8192);
+    }
+    #[test]
+    fn hop_one_to_window_preserved() {
+        assert_eq!(normalize_hop_size(100, 50), 50);
     }
 }
