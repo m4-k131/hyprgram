@@ -1,0 +1,54 @@
+# Windows Development Guide
+
+## Prerequisites
+
+Rust is installed via `rustup` at `%USERPROFILE%\.cargo\bin\`. If `cargo` is not found in your terminal, use the full path:
+
+```powershell
+& "$env:USERPROFILE\.cargo\bin\cargo.exe" <command>
+```
+
+> **conda users:** conda environments can shadow the system `PATH`. Either use the full path above, or open a fresh PowerShell window outside conda.
+
+---
+
+## a) Compile
+
+From the workspace root (`hyprgram/`):
+
+```powershell
+& "$env:USERPROFILE\.cargo\bin\cargo.exe" check --workspace
+```
+
+To build the release binary:
+
+```powershell
+& "$env:USERPROFILE\.cargo\bin\cargo.exe" build --release
+```
+
+---
+
+## b) Generate a spectrogram PNG from an audio file
+
+```powershell
+& "$env:USERPROFILE\.cargo\bin\cargo.exe" run -p hyprgram --bin audio_to_png -- input.mp3 output.png
+```
+
+### Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--width` | 800 | Output image width (px) |
+| `--height` | 200 | Output image height (px) |
+| `--log-bins` | 256 | Frequency bins |
+| `--fft` / `--window` | 20480 | FFT window size (samples) |
+| `--hop` | 256 | STFT hop (samples) |
+| `--legacy-vertical-scroll` | off | Render time top-to-bottom instead of left-to-right |
+
+### Example
+
+```powershell
+& "$env:USERPROFILE\.cargo\bin\cargo.exe" run -p hyprgram --bin audio_to_png -- music.wav spectrogram.png --width 1200 --height 300
+```
+
+Supported input formats: WAV, MP3, FLAC, AAC, Ogg Vorbis.

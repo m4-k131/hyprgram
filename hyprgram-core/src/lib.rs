@@ -4,6 +4,7 @@ pub mod dsp;
 pub mod error;
 #[cfg(target_os = "linux")]
 pub mod pipewire;
+pub mod render;
 pub mod ring;
 
 pub use dsp::{
@@ -11,4 +12,5 @@ pub use dsp::{
     DEFAULT_FFT_WINDOW_SAMPLES,
 };
 pub use error::CoreError;
+pub use render::{render_spectrogram_png, samples_to_spectrogram, SpectrogramImageConfig};
 pub use ring::SampleRing;

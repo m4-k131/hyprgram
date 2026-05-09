@@ -9,6 +9,7 @@ ringbuf = "0.4"
 realfft = "3.4"
 rustfft = "6.4"
 thiserror = "2.0"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 pipewire = "0.9"

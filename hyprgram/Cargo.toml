@@ -9,6 +9,7 @@ default-run = "hyprgram"
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 hyprgram-core = { path = "../hyprgram-core" }
+symphonia = { version = "0.5", default-features = false, features = ["aac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 bytemuck = { version = "1.21", features = ["derive"] }

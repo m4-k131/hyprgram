@@ -1,19 +1,36 @@
 //! Normal window (not layer-shell): sine → same DSP + spectrogram shader as the main app.
 //! Run: `cargo run -p hyprgram --bin sine_preview`
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    eprintln!("sine_preview is only supported on Linux (requires iced/Wayland)");
+    std::process::exit(1);
+}
+#[cfg(target_os = "linux")]
 use clap::Parser;
+#[cfg(target_os = "linux")]
 use hyprgram::dev::{effective_spectrogram_history, SpectrogramDevConfig};
+#[cfg(target_os = "linux")]
 use hyprgram::spectrogram::SpectrogramProgram;
+#[cfg(target_os = "linux")]
 use hyprgram_core::{
     SpectrumConfig, SpectrumProcessor, DEFAULT_FFT_HOP_SAMPLES, DEFAULT_FFT_WINDOW_SAMPLES,
 };
+#[cfg(target_os = "linux")]
 use iced::widget::container;
+#[cfg(target_os = "linux")]
 use iced::widget::shader::Shader;
+#[cfg(target_os = "linux")]
 use iced::{Element, Length, Size, Subscription, Task};
+#[cfg(target_os = "linux")]
 use std::collections::VecDeque;
+#[cfg(target_os = "linux")]
 use std::f32::consts::PI;
+#[cfg(target_os = "linux")]
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "linux")]
 use std::time::Duration;
 
+#[cfg(target_os = "linux")]
 #[derive(Parser, Debug, Clone)]
 #[command(about = "Sine generator → spectrogram (for tuning visuals without PipeWire/Hyprland)")]
 struct PreviewArgs {
@@ -42,11 +59,13 @@ struct PreviewArgs {
     legacy_vertical_scroll: bool,
 }
 
+#[cfg(target_os = "linux")]
 #[derive(Debug, Clone)]
 enum Message {
     Tick,
 }
 
+#[cfg(target_os = "linux")]
 struct Preview {
     proc: SpectrumProcessor,
     phase: f32,
@@ -57,6 +76,7 @@ struct Preview {
     scratch: Vec<f32>,
 }
 
+#[cfg(target_os = "linux")]
 impl Preview {
     fn new(args: PreviewArgs) -> Self {
         let rtl = !args.legacy_vertical_scroll;
@@ -86,6 +106,7 @@ impl Preview {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn update(p: &mut Preview, message: Message) -> Task<Message> {
     match message {
         Message::Tick => {
@@ -111,15 +132,18 @@ fn update(p: &mut Preview, message: Message) -> Task<Message> {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn view(p: &Preview) -> Element<'_, Message> {
     let sh = Shader::new(p.prog.clone()).width(Length::Fill).height(Length::Fill);
     container(sh).width(Length::Fill).height(Length::Fill).into()
 }
 
+#[cfg(target_os = "linux")]
 fn subscription(_p: &Preview) -> Subscription<Message> {
     iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick)
 }
 
+#[cfg(target_os = "linux")]
 fn main() -> iced::Result {
     let args = PreviewArgs::parse();
     let size = Size::new(args.width as f32, args.height as f32);
