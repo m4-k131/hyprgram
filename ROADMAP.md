@@ -78,20 +78,25 @@ This document lists **features and techniques** (not magic numbers) toward a **f
 
 ## Phased implementation order
 
-1. **Phase 1 — Honest baseline**  
-   Unify **timebase + latency** story; document **reaction alignment**; formalize **analysis vs render** rates; add **amplitude pipeline** doc (dB, floor, optional gamma).
+*Algorithm-first: every phase is testable via `audio_to_png` before touching realtime code.*
 
-2. **Phase 2 — STFT quality without changing transform family**  
-   Pluggable **window**; **band aggregation** + **triangular or mel** mapping; **frequency-domain smoothing** (Lanczos or lighter); **temporal smoothing** on scalars.
+1. **Phase 1 — Core spectrogram quality** ✅ *in progress*
+   Pluggable **window functions** (Hann, Hamming, Blackman, Blackman-Harris); **band aggregation** (triangular / mel mapping); **frequency-domain smoothing** (Lanczos or boxcar); **temporal smoothing** (EMA, peak hold); **amplitude pipeline** (dB floor/ceil, optional gamma).
 
-3. **Phase 3 — Transform upgrade (large)**  
-   **CQT** or **constant-Q filter bank** path; compare to STFT+log; optional **non-power-of-two** FFT for ms-based windows.
+2. **Phase 2 — Transform upgrades**
+   **CQT** or **constant-Q filter bank** path; compare to STFT+log; optional **non-power-of-two** FFT for ms-based windows; **A/C-weighting** filters.
 
-4. **Phase 4 — Polish and parity extras**  
-   Weighting filters; shader **interpolation** / colormap presets; **profiles** and **preset files**; optional **>60 Hz** present path.
+3. **Phase 3 — Realtime integration** (Linux/Wayland)
+   Unify **timebase + latency** story; document **reaction alignment**; formalize **analysis vs render** rates; PipeWire capture polish.
 
-5. **Phase 5 — Optional / research**  
-   SWIFT/analog modes; heavy **visual** post-processing; **CI** golden visuals.
+4. **Phase 4 — GPU / visualization polish**
+   Shader **interpolation** (bilinear); **colormap presets** (1D LUT texture, gradient stops); optional **post-process** pass (blur, glow).
+
+5. **Phase 5 — Product / engineering** ✅ *profiles done*
+   **Profiles** and **preset files** (TOML); **regression captures** (golden PNGs from sine/chirp); CI optional.
+
+6. **Phase 6 — Research / extras**
+   SWIFT/IIR analog modes; Brown–Puckette CQT mapping; heavy visual post-processing.
 
 ---
 

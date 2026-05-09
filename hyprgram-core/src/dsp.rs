@@ -19,7 +19,44 @@ pub fn normalize_hop_size(window_size: usize, hop: usize) -> usize {
     h.clamp(1, max_h)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WindowFunction {
+    #[default]
+    Hann,
+    Hamming,
+    Blackman,
+    BlackmanHarris,
+}
+
+impl WindowFunction {
+    pub fn generate(&self, size: usize) -> Vec<f32> {
+        let n = size.max(1);
+        let n1 = (n - 1).max(1) as f32;
+        match self {
+            WindowFunction::Hann => {
+                (0..n).map(|i| 0.5 * (1.0 - (2.0 * PI * i as f32 / n1).cos())).collect()
+            }
+            WindowFunction::Hamming => {
+                (0..n).map(|i| 0.53836 - 0.46164 * (2.0 * PI * i as f32 / n1).cos()).collect()
+            }
+            WindowFunction::Blackman => {
+                (0..n).map(|i| {
+                    let a = 2.0 * PI * i as f32 / n1;
+                    0.42 - 0.5 * a.cos() + 0.08 * (2.0 * a).cos()
+                }).collect()
+            }
+            WindowFunction::BlackmanHarris => {
+                (0..n).map(|i| {
+                    let a = 2.0 * PI * i as f32 / n1;
+                    0.35875 - 0.48829 * a.cos() + 0.14128 * (2.0 * a).cos() - 0.01168 * (3.0 * a).cos()
+                }).collect()
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SpectrumConfig {
     pub window_size: usize,
     pub hop_size: usize,
@@ -29,6 +66,8 @@ pub struct SpectrumConfig {
     pub f_max_hz: f32,
     pub db_floor: f32,
     pub db_ceil: f32,
+    #[serde(default)]
+    pub window_fn: WindowFunction,
 }
 
 impl Default for SpectrumConfig {
@@ -42,6 +81,7 @@ impl Default for SpectrumConfig {
             f_max_hz: 20000.0,
             db_floor: -80.0,
             db_ceil: 0.0,
+            window_fn: WindowFunction::Hann,
         }
     }
 }
@@ -49,7 +89,7 @@ impl Default for SpectrumConfig {
 pub struct SpectrumProcessor {
     cfg: SpectrumConfig,
     r2c: Arc<dyn RealToComplex<f32>>,
-    hann: Vec<f32>,
+    window: Vec<f32>,
     work_input: Vec<f32>,
     spectrum: Vec<Complex<f32>>,
     pending: Vec<f32>,
@@ -65,16 +105,12 @@ impl SpectrumProcessor {
         let r2c = planner.plan_fft_forward(cfg.window_size);
         let spectrum = r2c.make_output_vec();
         let work_input = r2c.make_input_vec();
-        let mut hann = vec![0.0f32; cfg.window_size];
-        let n1 = (cfg.window_size - 1).max(1) as f32;
-        for (i, w) in hann.iter_mut().enumerate() {
-            *w = 0.5 * (1.0 - (2.0 * PI * i as f32 / n1).cos());
-        }
+        let window = cfg.window_fn.generate(cfg.window_size);
         let pending_cap = cfg.window_size * 2;
         Ok(Self {
             cfg,
             r2c,
-            hann,
+            window,
             work_input,
             spectrum,
             pending: Vec::with_capacity(pending_cap),
@@ -93,7 +129,7 @@ impl SpectrumProcessor {
         out_columns.clear();
         while self.pending.len() >= w {
             for i in 0..w {
-                self.work_input[i] = self.pending[i] * self.hann[i];
+                self.work_input[i] = self.pending[i] * self.window[i];
             }
             if self.r2c.process(&mut self.work_input, &mut self.spectrum).is_err() {
                 break;

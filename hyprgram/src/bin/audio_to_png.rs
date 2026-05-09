@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use hyprgram_core::{
-    render_spectrogram_png, samples_to_spectrogram, SpectrumConfig, SpectrogramImageConfig,
-    DEFAULT_FFT_HOP_SAMPLES, DEFAULT_FFT_WINDOW_SAMPLES,
+    profiles, render_spectrogram_png, samples_to_spectrogram,
 };
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 use symphonia::core::audio::{AudioBufferRef, SampleBuffer};
 use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::errors::Error;
@@ -20,36 +20,96 @@ use symphonia::default::{get_codecs, get_probe};
 struct Args {
     input: PathBuf,
     output: PathBuf,
-    #[arg(long, default_value_t = 256)]
-    log_bins: usize,
-    #[arg(long = "fft", alias = "window", default_value_t = DEFAULT_FFT_WINDOW_SAMPLES)]
-    window: usize,
-    #[arg(long, default_value_t = DEFAULT_FFT_HOP_SAMPLES)]
-    hop: usize,
-    #[arg(long, default_value_t = 800)]
-    width: u32,
-    #[arg(long, default_value_t = 200)]
-    height: u32,
-    #[arg(long, help = "Render time top-to-bottom instead of left-to-right")]
+    #[arg(long, help = "Built-in profile: laptop, default, foobar-like")]
+    profile: Option<String>,
+    #[arg(long, help = "Path to a TOML profile file")]
+    config: Option<PathBuf>,
+    #[arg(long, help = "Override: number of log-spaced frequency bins")]
+    log_bins: Option<usize>,
+    #[arg(long = "fft", alias = "window", help = "Override: FFT window size (samples)")]
+    window: Option<usize>,
+    #[arg(long, help = "Override: STFT hop (samples)")]
+    hop: Option<usize>,
+    #[arg(long = "window-fn", help = "Override: window function (hann, hamming, blackman, blackman-harris)")]
+    window_fn: Option<String>,
+    #[arg(long, help = "Override: output image width (px)")]
+    width: Option<u32>,
+    #[arg(long, help = "Override: output image height (px)")]
+    height: Option<u32>,
+    #[arg(long, help = "Override: render time top-to-bottom instead of left-to-right")]
     legacy_vertical_scroll: bool,
 }
 
 fn main() -> Result<()> {
+    let total_start = Instant::now();
     let args = Args::parse();
-    let (samples, sample_rate) = decode_mono_f32(&args.input)?;
-    let mut spectrum = SpectrumConfig::default();
-    spectrum.window_size = args.window;
-    spectrum.hop_size = args.hop;
-    spectrum.sample_rate = sample_rate;
-    spectrum.log_bins = args.log_bins;
-    let columns = samples_to_spectrogram(&samples, spectrum.clone())?;
-    let image_config = SpectrogramImageConfig {
-        spectrum,
-        width: args.width,
-        height: args.height,
-        scroll_right_to_left: !args.legacy_vertical_scroll,
+
+    let profile = if let Some(path) = &args.config {
+        eprintln!("Loading config: {}", path.display());
+        profiles::load_profile(path)?
+    } else if let Some(name) = &args.profile {
+        eprintln!("Loading profile: {}", name);
+        profiles::builtin_profile(name)
+            .with_context(|| format!("unknown profile '{}'. Available: {:?}", name, profiles::builtin_profile_names()))?
+    } else {
+        profiles::builtin_profile("default").unwrap()
     };
+
+    let mut image_config = profile.to_image_config();
+    if let Some(v) = args.log_bins { image_config.spectrum.log_bins = v; }
+    if let Some(v) = args.window { image_config.spectrum.window_size = v; }
+    if let Some(v) = args.hop { image_config.spectrum.hop_size = v; }
+    if let Some(ref v) = args.window_fn {
+        image_config.spectrum.window_fn = match v.to_lowercase().as_str() {
+            "hann" => hyprgram_core::WindowFunction::Hann,
+            "hamming" => hyprgram_core::WindowFunction::Hamming,
+            "blackman" => hyprgram_core::WindowFunction::Blackman,
+            "blackman-harris" => hyprgram_core::WindowFunction::BlackmanHarris,
+            other => anyhow::bail!("unknown window function '{}'. Options: hann, hamming, blackman, blackman-harris", other),
+        };
+    }
+    if let Some(v) = args.width { image_config.width = v; }
+    if let Some(v) = args.height { image_config.height = v; }
+    if args.legacy_vertical_scroll { image_config.scroll_right_to_left = false; }
+
+    eprintln!("=== hyprgram audio_to_png ===");
+    eprintln!("input   : {}", args.input.display());
+    eprintln!("output  : {}", args.output.display());
+    eprintln!("fft     : {} samples  |  hop : {} samples  |  window : {:?}", image_config.spectrum.window_size, image_config.spectrum.hop_size, image_config.spectrum.window_fn);
+    eprintln!("bins    : {} (log)", image_config.spectrum.log_bins);
+    eprintln!("image   : {} x {} px", image_config.width, image_config.height);
+    eprintln!("scroll  : {}", if image_config.scroll_right_to_left { "right-to-left" } else { "top-to-bottom" });
+    eprintln!();
+
+    let decode_start = Instant::now();
+    eprintln!("[1/3] Decoding audio...");
+    let (samples, sample_rate) = decode_mono_f32(&args.input)?;
+    let decode_elapsed = decode_start.elapsed();
+    let duration_secs = samples.len() as f64 / sample_rate as f64;
+    eprintln!("       {} samples @ {} Hz = {:.1}s audio", samples.len(), sample_rate, duration_secs);
+    eprintln!("       decode took {:.2}s", decode_elapsed.as_secs_f64());
+    eprintln!();
+
+    image_config.spectrum.sample_rate = sample_rate;
+    let w = image_config.spectrum.window_size;
+    let h = image_config.spectrum.hop_size;
+    let num_windows = if samples.len() >= w { (samples.len() - w) / h + 1 } else { 0 };
+    eprintln!("[2/3] Computing spectrogram ({} windows)...", num_windows);
+    let fft_start = Instant::now();
+    let columns = samples_to_spectrogram(&samples, image_config.spectrum.clone())?;
+    let fft_elapsed = fft_start.elapsed();
+    eprintln!("       {} columns in {:.2}s ({:.0} windows/s)", columns.len(), fft_elapsed.as_secs_f64(), columns.len() as f64 / fft_elapsed.as_secs_f64().max(0.001));
+    eprintln!();
+
+    eprintln!("[3/3] Rendering PNG...");
+    let render_start = Instant::now();
     render_spectrogram_png(&columns, &image_config, &args.output)?;
+    let render_elapsed = render_start.elapsed();
+    eprintln!("       render took {:.2}s", render_elapsed.as_secs_f64());
+    eprintln!();
+
+    let total_elapsed = total_start.elapsed();
+    eprintln!("Done. Total: {:.2}s  ->  {}", total_elapsed.as_secs_f64(), args.output.display());
     Ok(())
 }
 
@@ -77,6 +137,8 @@ fn decode_mono_f32(path: &Path) -> Result<(Vec<f32>, u32)> {
         .make(codec_params, &DecoderOptions::default())
         .context("failed to create audio decoder")?;
     let mut samples = Vec::new();
+    let mut packet_count: u64 = 0;
+    let decode_start = Instant::now();
     loop {
         let packet = match format.next_packet() {
             Ok(packet) => packet,
@@ -87,7 +149,15 @@ fn decode_mono_f32(path: &Path) -> Result<(Vec<f32>, u32)> {
             continue;
         }
         match decoder.decode(&packet) {
-            Ok(audio) => push_mono_samples(audio, &mut samples),
+            Ok(audio) => {
+                push_mono_samples(audio, &mut samples);
+                packet_count += 1;
+                if packet_count % 500 == 0 {
+                    let elapsed = decode_start.elapsed();
+                    let secs = samples.len() as f64 / sample_rate as f64;
+                    eprintln!("       {} packets, {:.1}s audio decoded ({:.1}s elapsed)", packet_count, secs, elapsed.as_secs_f64());
+                }
+            }
             Err(Error::DecodeError(_)) => continue,
             Err(err) => return Err(err).context("failed to decode audio packet"),
         }

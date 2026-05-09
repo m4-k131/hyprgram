@@ -1,7 +1,7 @@
 use crate::Args;
 use hyprgram::dev::{effective_spectrogram_history, SpectrogramDevConfig};
 use hyprgram::spectrogram::SpectrogramProgram;
-use hyprgram_core::{SampleRing, SpectrumConfig, SpectrumProcessor};
+use hyprgram_core::{profiles, SampleRing, SpectrumConfig, SpectrumProcessor};
 use iced::widget::container;
 use iced::widget::shader::Shader;
 use iced::{Element, Length, Size, Subscription, Task};
@@ -20,19 +20,40 @@ pub struct App {
 
 impl App {
     fn bootstrap(args: Args) -> Self {
-        let rtl = !args.legacy_vertical_scroll;
-        let history = effective_spectrogram_history(args.history, args.width, args.height, rtl);
+        let profile = if let Some(path) = &args.config {
+            profiles::load_profile(path).expect("failed to load config")
+        } else if let Some(name) = &args.profile {
+            profiles::builtin_profile(name)
+                .unwrap_or_else(|| panic!("unknown profile '{}'. Available: {:?}", name, profiles::builtin_profile_names()))
+        } else {
+            profiles::builtin_profile("default").unwrap()
+        };
+        let mut spectrum = profile.spectrum;
+        if let Some(v) = args.log_bins { spectrum.log_bins = v; }
+        if let Some(v) = args.window { spectrum.window_size = v; }
+        if let Some(v) = args.hop { spectrum.hop_size = v; }
+        if let Some(v) = args.sample_rate { spectrum.sample_rate = v; }
+        if let Some(ref v) = args.window_fn {
+            spectrum.window_fn = match v.to_lowercase().as_str() {
+                "hann" => hyprgram_core::WindowFunction::Hann,
+                "hamming" => hyprgram_core::WindowFunction::Hamming,
+                "blackman" => hyprgram_core::WindowFunction::Blackman,
+                "blackman-harris" => hyprgram_core::WindowFunction::BlackmanHarris,
+                other => panic!("unknown window function '{}'", other),
+            };
+        }
+        let img = profile.image.as_ref();
+        let width = args.width.unwrap_or(img.map_or(800, |i| i.width));
+        let height = args.height.unwrap_or(img.map_or(200, |i| i.height));
+        let rtl = if args.legacy_vertical_scroll { false } else { img.map_or(true, |i| i.scroll_right_to_left) };
+
+        let history = effective_spectrogram_history(args.history, width, height, rtl);
         let backlog_cap = (history as usize).saturating_mul(8).saturating_add(256).max(1024);
         let pending_spectra = Arc::new(Mutex::new(VecDeque::new()));
         let pending_w = pending_spectra.clone();
-        let ring = SampleRing::new((args.sample_rate as usize) * 2);
+        let ring = SampleRing::new((spectrum.sample_rate as usize) * 2);
         let _pw = hyprgram_core::pipewire::spawn_capture(args.target_object.clone(), ring.clone());
-        let mut cfg = SpectrumConfig::default();
-        cfg.window_size = args.window;
-        cfg.hop_size = args.hop;
-        cfg.sample_rate = args.sample_rate;
-        cfg.log_bins = args.log_bins;
-        let mut proc = SpectrumProcessor::new(cfg).expect("spectrum processor");
+        let mut proc = SpectrumProcessor::new(spectrum.clone()).expect("spectrum processor");
         std::thread::spawn(move || {
             let mut scratch = vec![0.0f32; 65536];
             loop {
@@ -55,7 +76,7 @@ impl App {
         Self {
             prog: SpectrogramProgram {
                 pending_spectra,
-                bins: args.log_bins as u32,
+                bins: spectrum.log_bins as u32,
                 history,
                 dev: SpectrogramDevConfig {
                     scroll_right_to_left: rtl,

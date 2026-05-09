@@ -1,8 +1,9 @@
 use crate::{CoreError, SpectrumConfig, SpectrumProcessor};
 use image::{ImageBuffer, Rgb};
+use rayon::prelude::*;
 use std::path::Path;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SpectrogramImageConfig {
     pub spectrum: SpectrumConfig,
     pub width: u32,
@@ -25,10 +26,39 @@ pub fn samples_to_spectrogram(
     samples: &[f32],
     spectrum: SpectrumConfig,
 ) -> Result<Vec<Vec<f32>>, CoreError> {
-    let mut processor = SpectrumProcessor::new(spectrum)?;
-    let mut columns = Vec::new();
-    processor.push_samples(samples, &mut columns);
-    Ok(columns)
+    let n = samples.len();
+    let w = spectrum.window_size;
+    let h = spectrum.hop_size;
+    if n < w {
+        let mut processor = SpectrumProcessor::new(spectrum)?;
+        let mut columns = Vec::new();
+        processor.push_samples(samples, &mut columns);
+        return Ok(columns);
+    }
+    let num_windows = (n - w) / h + 1;
+    let num_threads = rayon::current_num_threads().max(1);
+    let windows_per_chunk = (num_windows + num_threads - 1) / num_threads;
+    let chunks: Vec<(usize, usize)> = (0..num_windows)
+        .step_by(windows_per_chunk)
+        .map(|start| {
+            let end = (start + windows_per_chunk).min(num_windows);
+            (start, end)
+        })
+        .collect();
+    let results: Vec<Vec<Vec<f32>>> = chunks
+        .par_iter()
+        .map(|&(j_start, j_end)| {
+            let sample_start = j_start * h;
+            let sample_end = ((j_end - 1) * h + w).min(n);
+            let mut processor = SpectrumProcessor::new(spectrum.clone())
+                .expect("spectrum processor");
+            let mut columns = Vec::with_capacity(j_end - j_start);
+            processor.push_samples(&samples[sample_start..sample_end], &mut columns);
+            columns
+        })
+        .collect();
+    let total: Vec<Vec<f32>> = results.into_iter().flatten().collect();
+    Ok(total)
 }
 
 pub fn render_spectrogram_png<P: AsRef<Path>>(

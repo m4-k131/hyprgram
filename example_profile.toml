@@ -1,0 +1,15 @@
+[spectrum]
+window_size = 20480
+hop_size = 256
+sample_rate = 48000
+log_bins = 256
+f_min_hz = 20.0
+f_max_hz = 20000.0
+db_floor = -80.0
+db_ceil = 0.0
+window_fn = "hann"
+
+[image]
+width = 800
+height = 200
+scroll_right_to_left = true

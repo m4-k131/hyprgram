@@ -38,6 +38,8 @@ To build the release binary:
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--profile` | `default` | Built-in profile: `laptop`, `default`, `foobar-like` |
+| `--config` | — | Path to a TOML profile file (see `example_profile.toml`) |
 | `--width` | 800 | Output image width (px) |
 | `--height` | 200 | Output image height (px) |
 | `--log-bins` | 256 | Frequency bins |
@@ -45,10 +47,19 @@ To build the release binary:
 | `--hop` | 256 | STFT hop (samples) |
 | `--legacy-vertical-scroll` | off | Render time top-to-bottom instead of left-to-right |
 
-### Example
+CLI flags override profile/config values.
+
+### Examples
 
 ```powershell
-& "$env:USERPROFILE\.cargo\bin\cargo.exe" run -p hyprgram --bin audio_to_png -- music.wav spectrogram.png --width 1200 --height 300
+# Use a built-in profile
+& "$env:USERPROFILE\.cargo\bin\cargo.exe" run -p hyprgram --bin audio_to_png -- music.wav out.png --profile laptop
+
+# Use a TOML config file
+& "$env:USERPROFILE\.cargo\bin\cargo.exe" run -p hyprgram --bin audio_to_png -- music.wav out.png --config my_profile.toml
+
+# Profile + overrides
+& "$env:USERPROFILE\.cargo\bin\cargo.exe" run -p hyprgram --bin audio_to_png -- music.wav out.png --profile foobar-like --width 1200 --height 300
 ```
 
 Supported input formats: WAV, MP3, FLAC, AAC, Ogg Vorbis.
