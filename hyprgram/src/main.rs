@@ -30,6 +30,14 @@ pub struct Args {
     pub window_fn: Option<String>,
     #[arg(long = "band-agg", help = "Override: band aggregation (nearest, triangular)")]
     pub band_agg: Option<String>,
+    #[arg(long = "smoothing", help = "Override: Gaussian frequency smoothing sigma (0=off, try 0.5-2.0)")]
+    pub smoothing: Option<f32>,
+    #[arg(long = "gamma", help = "Override: amplitude gamma (<1 brightens, >1 darkens)")]
+    pub gamma: Option<f32>,
+    #[arg(long = "temporal-alpha", help = "Override: EMA temporal smoothing (0=off, 0.3-0.7 typical)")]
+    pub temporal_alpha: Option<f32>,
+    #[arg(long = "peak-decay", help = "Override: peak hold decay per frame (0=off, 0.5-0.9 typical)")]
+    pub peak_decay: Option<f32>,
     #[arg(long, help = "Override: window width (px)")]
     pub width: Option<u32>,
     #[arg(long, help = "Override: window height (px)")]

@@ -72,9 +72,10 @@ PipeWire capture thread
 
 | Type | Crate | Purpose |
 |------|-------|---------|
-| `SpectrumConfig` | core | All DSP parameters (window_size, hop, bins, dB range, window_fn) |
+| `SpectrumConfig` | core | All DSP parameters (window_size, hop, bins, dB range, window_fn, band_aggregation, freq_smoothing_lobes, amplitude_gamma) |
 | `SpectrumProcessor` | core | Stateful STFT engine: windowing → FFT → log-magnitude mapping |
 | `WindowFunction` | core | Enum: Hann, Hamming, Blackman, BlackmanHarris |
+| `BandAggregation` | core | Enum: Nearest, Triangular |
 | `SpectrogramImageConfig` | core | SpectrumConfig + image dimensions + scroll direction |
 | `Profile` | core | TOML-deserializable: spectrum + optional image section |
 | `SpectrogramProgram` | app | GPU shader state (pending_spectra queue, bins, history, dev config) |
@@ -86,6 +87,10 @@ PipeWire capture thread
 
 - **STFT spectrogram** with configurable FFT window size, hop, log-frequency bins
 - **4 window functions**: Hann (default), Hamming, Blackman, Blackman-Harris
+- **Band aggregation**: Nearest (single-bin) or Triangular (weighted filter bank)
+- **Frequency-domain smoothing**: Gaussian kernel (configurable sigma, 0=off)
+- **Amplitude gamma**: power-curve control over brightness
+- **Temporal smoothing**: EMA (exponential moving average) and peak hold decay across columns
 - **Parallel FFT**: `samples_to_spectrogram` splits windows across rayon threads
 - **TOML profiles**: `--profile laptop|default|foobar-like` or `--config file.toml`
 - **CLI overrides**: any `--fft`, `--hop`, `--window-fn`, `--width`, etc. overrides profile
@@ -96,11 +101,7 @@ PipeWire capture thread
 
 ## What's NOT yet implemented
 
-See `ROADMAP.md` for full list. Immediate next steps in Phase 1:
-- Band aggregation (triangular/mel filter banks)
-- Frequency-domain smoothing (Lanczos kernel)
-- Temporal smoothing (EMA, peak hold)
-- Amplitude gamma control
+See `ROADMAP.md` for full list. Phase 1 complete. Next: Phase 2 — Transform upgrades (CQT, non-power-of-two FFT, weighting).
 
 ---
 

@@ -80,8 +80,8 @@ This document lists **features and techniques** (not magic numbers) toward a **f
 
 *Algorithm-first: every phase is testable via `audio_to_png` before touching realtime code.*
 
-1. **Phase 1 — Core spectrogram quality** ✅ *in progress*
-   Pluggable **window functions** (Hann, Hamming, Blackman, Blackman-Harris); **band aggregation** (triangular / mel mapping); **frequency-domain smoothing** (Lanczos or boxcar); **temporal smoothing** (EMA, peak hold); **amplitude pipeline** (dB floor/ceil, optional gamma).
+1. **Phase 1 — Core spectrogram quality** ✅ *complete*
+   Pluggable **window functions** (Hann, Hamming, Blackman, Blackman-Harris); **band aggregation** (nearest / triangular); **frequency-domain smoothing** (Gaussian kernel); **temporal smoothing** (EMA, peak hold); **amplitude pipeline** (dB floor/ceil, gamma).
 
 2. **Phase 2 — Transform upgrades**
    **CQT** or **constant-Q filter bank** path; compare to STFT+log; optional **non-power-of-two** FFT for ms-based windows; **A/C-weighting** filters.

@@ -9,6 +9,10 @@ db_floor = -80.0
 db_ceil = 0.0
 window_fn = "hann"
 band_aggregation = "nearest"
+freq_smoothing_sigma = 0.0
+amplitude_gamma = 1.0
+temporal_alpha = 0.0
+peak_hold_decay = 0.0
 
 [image]
 width = 800

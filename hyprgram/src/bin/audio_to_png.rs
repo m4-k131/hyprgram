@@ -34,6 +34,14 @@ struct Args {
     window_fn: Option<String>,
     #[arg(long = "band-agg", help = "Override: band aggregation (nearest, triangular)")]
     band_agg: Option<String>,
+    #[arg(long = "smoothing", help = "Override: Gaussian frequency smoothing sigma (0=off, try 0.5-2.0)")]
+    smoothing: Option<f32>,
+    #[arg(long = "gamma", help = "Override: amplitude gamma (<1 brightens, >1 darkens)")]
+    gamma: Option<f32>,
+    #[arg(long = "temporal-alpha", help = "Override: EMA temporal smoothing (0=off, 0.3-0.7 typical)")]
+    temporal_alpha: Option<f32>,
+    #[arg(long = "peak-decay", help = "Override: peak hold decay per frame (0=off, 0.5-0.9 typical)")]
+    peak_decay: Option<f32>,
     #[arg(long, help = "Override: output image width (px)")]
     width: Option<u32>,
     #[arg(long, help = "Override: output image height (px)")]
@@ -77,6 +85,10 @@ fn main() -> Result<()> {
             other => anyhow::bail!("unknown band aggregation '{}'. Options: nearest, triangular", other),
         };
     }
+    if let Some(v) = args.smoothing { image_config.spectrum.freq_smoothing_sigma = v; }
+    if let Some(v) = args.gamma { image_config.spectrum.amplitude_gamma = v; }
+    if let Some(v) = args.temporal_alpha { image_config.spectrum.temporal_alpha = v; }
+    if let Some(v) = args.peak_decay { image_config.spectrum.peak_hold_decay = v; }
     if let Some(v) = args.width { image_config.width = v; }
     if let Some(v) = args.height { image_config.height = v; }
     if args.legacy_vertical_scroll { image_config.scroll_right_to_left = false; }
@@ -85,6 +97,7 @@ fn main() -> Result<()> {
     eprintln!("input   : {}", args.input.display());
     eprintln!("output  : {}", args.output.display());
     eprintln!("fft     : {} samples  |  hop : {} samples  |  window : {:?}  |  bands : {:?}", image_config.spectrum.window_size, image_config.spectrum.hop_size, image_config.spectrum.window_fn, image_config.spectrum.band_aggregation);
+    eprintln!("smooth  : {:.2} sigma  |  gamma : {:.2}  |  ema : {:.2}  |  peak : {:.2}", image_config.spectrum.freq_smoothing_sigma, image_config.spectrum.amplitude_gamma, image_config.spectrum.temporal_alpha, image_config.spectrum.peak_hold_decay);
     eprintln!("bins    : {} (log)", image_config.spectrum.log_bins);
     eprintln!("image   : {} x {} px", image_config.width, image_config.height);
     eprintln!("scroll  : {}", if image_config.scroll_right_to_left { "right-to-left" } else { "top-to-bottom" });

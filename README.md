@@ -52,6 +52,11 @@ cargo run -p hyprgram --bin audio_to_png -- song.mp3 out.png --profile foobar-li
 | `--hop` | 256 | STFT hop between frames (samples) |
 | `--log-bins` | 256 | Number of log-spaced frequency bins |
 | `--window-fn` | hann | Window function: `hann`, `hamming`, `blackman`, `blackman-harris` |
+| `--band-agg` | nearest | Band aggregation: `nearest`, `triangular` |
+| `--smoothing` | 0.0 | Gaussian frequency smoothing sigma (0=off, try 0.5-2.0) |
+| `--gamma` | 1.0 | Amplitude gamma (<1 brightens, >1 darkens) |
+| `--temporal-alpha` | 0.0 | EMA temporal smoothing (0=off, 0.3-0.7 typical) |
+| `--peak-decay` | 0.0 | Peak hold decay per frame (0=off, 0.5-0.9 typical) |
 | `--width` | 800 | Image width (px) |
 | `--height` | 200 | Image height (px) |
 | `--legacy-vertical-scroll` | off | Render time top-to-bottom instead of right-to-left |
@@ -80,4 +85,4 @@ cargo build --release
 
 ## Roadmap
 
-See `ROADMAP.md` for the full feature plan. Currently in Phase 1 — core spectrogram quality improvements (window functions done, band aggregation and smoothing next).
+See `ROADMAP.md` for the full feature plan. Phase 1 complete — all core spectrogram quality features implemented.

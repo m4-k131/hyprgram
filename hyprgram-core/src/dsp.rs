@@ -78,7 +78,17 @@ pub struct SpectrumConfig {
     pub window_fn: WindowFunction,
     #[serde(default)]
     pub band_aggregation: BandAggregation,
+    #[serde(default)]
+    pub freq_smoothing_sigma: f32,
+    #[serde(default = "default_gamma")]
+    pub amplitude_gamma: f32,
+    #[serde(default)]
+    pub temporal_alpha: f32,
+    #[serde(default)]
+    pub peak_hold_decay: f32,
 }
+
+fn default_gamma() -> f32 { 1.0 }
 
 impl Default for SpectrumConfig {
     fn default() -> Self {
@@ -93,6 +103,10 @@ impl Default for SpectrumConfig {
             db_ceil: 0.0,
             window_fn: WindowFunction::Hann,
             band_aggregation: BandAggregation::Nearest,
+            freq_smoothing_sigma: 0.0,
+            amplitude_gamma: 1.0,
+            temporal_alpha: 0.0,
+            peak_hold_decay: 0.0,
         }
     }
 }
@@ -104,6 +118,9 @@ pub struct SpectrumProcessor {
     work_input: Vec<f32>,
     spectrum: Vec<Complex<f32>>,
     band_weights: Vec<Vec<(usize, f32)>>,
+    smoothing_kernel: Vec<(isize, f32)>,
+    prev_column: Vec<f32>,
+    peak_column: Vec<f32>,
     pending: Vec<f32>,
 }
 
@@ -119,6 +136,7 @@ impl SpectrumProcessor {
         let work_input = r2c.make_input_vec();
         let window = cfg.window_fn.generate(cfg.window_size);
         let band_weights = build_band_weights(&cfg);
+        let smoothing_kernel = build_gaussian_kernel(cfg.freq_smoothing_sigma);
         let pending_cap = cfg.window_size * 2;
         Ok(Self {
             cfg,
@@ -127,6 +145,9 @@ impl SpectrumProcessor {
             work_input,
             spectrum,
             band_weights,
+            smoothing_kernel,
+            prev_column: Vec::new(),
+            peak_column: Vec::new(),
             pending: Vec::with_capacity(pending_cap),
         })
     }
@@ -151,6 +172,7 @@ impl SpectrumProcessor {
             self.pending.drain(..h);
             let mut col = vec![0.0f32; self.cfg.log_bins];
             self.map_log_magnitude(&mut col);
+            self.apply_temporal(&mut col);
             out_columns.push(col);
         }
     }
@@ -194,6 +216,48 @@ impl SpectrumProcessor {
                 }
             }
         }
+        if !self.smoothing_kernel.is_empty() {
+            let orig = col.to_vec();
+            let n = col.len() as isize;
+            for i in 0..col.len() {
+                let mut sum = 0.0f32;
+                let mut wsum = 0.0f32;
+                for &(off, w) in &self.smoothing_kernel {
+                    let j = i as isize + off;
+                    if j >= 0 && j < n {
+                        sum += orig[j as usize] * w;
+                        wsum += w;
+                    }
+                }
+                col[i] = if wsum > 0.0 { sum / wsum } else { orig[i] };
+            }
+        }
+        let gamma = self.cfg.amplitude_gamma;
+        if (gamma - 1.0).abs() > 1e-6 {
+            for v in col.iter_mut() {
+                *v = v.powf(gamma);
+            }
+        }
+    }
+    fn apply_temporal(&mut self, col: &mut Vec<f32>) {
+        let alpha = self.cfg.temporal_alpha;
+        let decay = self.cfg.peak_hold_decay;
+        if alpha > 0.0 && self.prev_column.len() == col.len() {
+            for (v, prev) in col.iter_mut().zip(self.prev_column.iter()) {
+                *v = alpha * *v + (1.0 - alpha) * prev;
+            }
+        }
+        if decay > 0.0 {
+            if self.peak_column.len() != col.len() {
+                self.peak_column = col.clone();
+            } else {
+                for (v, peak) in col.iter().zip(self.peak_column.iter_mut()) {
+                    *peak = (*v).max(*peak * decay);
+                }
+                col.copy_from_slice(&self.peak_column);
+            }
+        }
+        self.prev_column = col.clone();
     }
 }
 
@@ -236,6 +300,27 @@ fn build_band_weights(cfg: &SpectrumConfig) -> Vec<Vec<(usize, f32)>> {
         weights.push(band);
     }
     weights
+}
+
+fn build_gaussian_kernel(sigma: f32) -> Vec<(isize, f32)> {
+    if sigma <= 0.0 {
+        return Vec::new();
+    }
+    let radius = (3.0 * sigma).ceil() as isize;
+    let mut taps = Vec::new();
+    let mut total = 0.0f32;
+    for i in -radius..=radius {
+        let x = i as f32;
+        let w = (-0.5 * (x / sigma).powi(2)).exp();
+        taps.push((i, w));
+        total += w;
+    }
+    if total > 0.0 {
+        for (_, w) in taps.iter_mut() {
+            *w /= total;
+        }
+    }
+    taps
 }
 
 #[cfg(test)]

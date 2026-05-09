@@ -49,6 +49,10 @@ impl App {
                 other => panic!("unknown band aggregation '{}'", other),
             };
         }
+        if let Some(v) = args.smoothing { spectrum.freq_smoothing_sigma = v; }
+        if let Some(v) = args.gamma { spectrum.amplitude_gamma = v; }
+        if let Some(v) = args.temporal_alpha { spectrum.temporal_alpha = v; }
+        if let Some(v) = args.peak_decay { spectrum.peak_hold_decay = v; }
         let img = profile.image.as_ref();
         let width = args.width.unwrap_or(img.map_or(800, |i| i.width));
         let height = args.height.unwrap_or(img.map_or(200, |i| i.height));
