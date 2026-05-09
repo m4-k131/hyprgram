@@ -18,3 +18,4 @@ peak_hold_decay = 0.0
 width = 800
 height = 200
 scroll_right_to_left = true
+colormap = "viridis"

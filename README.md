@@ -57,6 +57,7 @@ cargo run -p hyprgram --bin audio_to_png -- song.mp3 out.png --profile foobar-li
 | `--gamma` | 1.0 | Amplitude gamma (<1 brightens, >1 darkens) |
 | `--temporal-alpha` | 0.0 | EMA temporal smoothing (0=off, 0.3-0.7 typical) |
 | `--peak-decay` | 0.0 | Peak hold decay per frame (0=off, 0.5-0.9 typical) |
+| `--colormap` | viridis | Colormap: `viridis`, `inferno`, `magma`, `plasma`, `turbo`, `grayscale`, `heat` |
 | `--width` | 800 | Image width (px) |
 | `--height` | 200 | Image height (px) |
 | `--legacy-vertical-scroll` | off | Render time top-to-bottom instead of right-to-left |

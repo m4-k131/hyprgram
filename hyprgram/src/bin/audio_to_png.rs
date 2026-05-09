@@ -42,6 +42,8 @@ struct Args {
     temporal_alpha: Option<f32>,
     #[arg(long = "peak-decay", help = "Override: peak hold decay per frame (0=off, 0.5-0.9 typical)")]
     peak_decay: Option<f32>,
+    #[arg(long = "colormap", help = "Override: colormap (viridis, inferno, magma, plasma, turbo, grayscale, heat)")]
+    colormap: Option<String>,
     #[arg(long, help = "Override: output image width (px)")]
     width: Option<u32>,
     #[arg(long, help = "Override: output image height (px)")]
@@ -89,6 +91,7 @@ fn main() -> Result<()> {
     if let Some(v) = args.gamma { image_config.spectrum.amplitude_gamma = v; }
     if let Some(v) = args.temporal_alpha { image_config.spectrum.temporal_alpha = v; }
     if let Some(v) = args.peak_decay { image_config.spectrum.peak_hold_decay = v; }
+    if let Some(v) = args.colormap { image_config.colormap = v; }
     if let Some(v) = args.width { image_config.width = v; }
     if let Some(v) = args.height { image_config.height = v; }
     if args.legacy_vertical_scroll { image_config.scroll_right_to_left = false; }
@@ -98,6 +101,7 @@ fn main() -> Result<()> {
     eprintln!("output  : {}", args.output.display());
     eprintln!("fft     : {} samples  |  hop : {} samples  |  window : {:?}  |  bands : {:?}", image_config.spectrum.window_size, image_config.spectrum.hop_size, image_config.spectrum.window_fn, image_config.spectrum.band_aggregation);
     eprintln!("smooth  : {:.2} sigma  |  gamma : {:.2}  |  ema : {:.2}  |  peak : {:.2}", image_config.spectrum.freq_smoothing_sigma, image_config.spectrum.amplitude_gamma, image_config.spectrum.temporal_alpha, image_config.spectrum.peak_hold_decay);
+    eprintln!("cmap    : {}", image_config.colormap);
     eprintln!("bins    : {} (log)", image_config.spectrum.log_bins);
     eprintln!("image   : {} x {} px", image_config.width, image_config.height);
     eprintln!("scroll  : {}", if image_config.scroll_right_to_left { "right-to-left" } else { "top-to-bottom" });

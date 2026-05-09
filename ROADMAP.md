@@ -81,7 +81,7 @@ This document lists **features and techniques** (not magic numbers) toward a **f
 *Algorithm-first: every phase is testable via `audio_to_png` before touching realtime code.*
 
 1. **Phase 1 — Core spectrogram quality** ✅ *complete*
-   Pluggable **window functions** (Hann, Hamming, Blackman, Blackman-Harris); **band aggregation** (nearest / triangular); **frequency-domain smoothing** (Gaussian kernel); **temporal smoothing** (EMA, peak hold); **amplitude pipeline** (dB floor/ceil, gamma).
+   Pluggable **window functions** (Hann, Hamming, Blackman, Blackman-Harris); **band aggregation** (nearest / triangular); **frequency-domain smoothing** (Gaussian kernel); **temporal smoothing** (EMA, peak hold); **amplitude pipeline** (dB floor/ceil, gamma); **colormap presets** (viridis, inferno, magma, plasma, turbo, grayscale, heat).
 
 2. **Phase 2 — Transform upgrades**
    **CQT** or **constant-Q filter bank** path; compare to STFT+log; optional **non-power-of-two** FFT for ms-based windows; **A/C-weighting** filters.
@@ -90,7 +90,7 @@ This document lists **features and techniques** (not magic numbers) toward a **f
    Unify **timebase + latency** story; document **reaction alignment**; formalize **analysis vs render** rates; PipeWire capture polish.
 
 4. **Phase 4 — GPU / visualization polish**
-   Shader **interpolation** (bilinear); **colormap presets** (1D LUT texture, gradient stops); optional **post-process** pass (blur, glow).
+   Shader **interpolation** (bilinear); GPU **colormap** as 1D LUT texture; optional **post-process** pass (blur, glow).
 
 5. **Phase 5 — Product / engineering** ✅ *profiles done*
    **Profiles** and **preset files** (TOML); **regression captures** (golden PNGs from sine/chirp); CI optional.

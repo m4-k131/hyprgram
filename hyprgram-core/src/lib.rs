@@ -1,5 +1,6 @@
 //! hyprgram-core: DSP, ring buffer, and (Linux) PipeWire capture.
 
+pub mod colormap;
 pub mod dsp;
 pub mod error;
 #[cfg(target_os = "linux")]

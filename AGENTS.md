@@ -91,13 +91,13 @@ PipeWire capture thread
 - **Frequency-domain smoothing**: Gaussian kernel (configurable sigma, 0=off)
 - **Amplitude gamma**: power-curve control over brightness
 - **Temporal smoothing**: EMA (exponential moving average) and peak hold decay across columns
+- **Colormap presets**: 7 built-in colormaps (viridis, inferno, magma, plasma, turbo, grayscale, heat) via gradient-stop LUT
 - **Parallel FFT**: `samples_to_spectrogram` splits windows across rayon threads
 - **TOML profiles**: `--profile laptop|default|foobar-like` or `--config file.toml`
 - **CLI overrides**: any `--fft`, `--hop`, `--window-fn`, `--width`, etc. overrides profile
 - **Offline PNG**: `audio_to_png` binary works on Windows, macOS, Linux
 - **Live GPU rendering**: Linux/Wayland only (iced + wgpu + PipeWire)
 - **Verbose progress**: decode packets, FFT windows/s, render timing
-- **Viridis colormap**: polynomial approximation, CPU-side
 
 ## What's NOT yet implemented
 

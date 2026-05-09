@@ -16,11 +16,14 @@ pub struct ProfileImage {
     pub height: u32,
     #[serde(default = "default_scroll")]
     pub scroll_right_to_left: bool,
+    #[serde(default = "default_colormap")]
+    pub colormap: String,
 }
 
 fn default_width() -> u32 { 800 }
 fn default_height() -> u32 { 200 }
 fn default_scroll() -> bool { true }
+fn default_colormap() -> String { "viridis".into() }
 
 impl Profile {
     pub fn to_image_config(&self) -> SpectrogramImageConfig {
@@ -30,6 +33,7 @@ impl Profile {
             width: img.map_or(800, |i| i.width),
             height: img.map_or(200, |i| i.height),
             scroll_right_to_left: img.map_or(true, |i| i.scroll_right_to_left),
+            colormap: img.map_or_else(|| "viridis".into(), |i| i.colormap.clone()),
         }
     }
 }

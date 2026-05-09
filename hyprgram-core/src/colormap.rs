@@ -1,0 +1,187 @@
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Colormap {
+    name: String,
+    stops: Vec<(f32, f32, f32, f32)>,
+}
+
+impl Colormap {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn build_lut(&self, size: usize) -> Vec<[u8; 3]> {
+        let n = size.max(2);
+        let mut lut = Vec::with_capacity(n);
+        for i in 0..n {
+            let t = i as f32 / (n - 1) as f32;
+            lut.push(self.sample(t));
+        }
+        lut
+    }
+    fn sample(&self, t: f32) -> [u8; 3] {
+        let t = t.clamp(0.0, 1.0);
+        if t <= self.stops[0].0 {
+            return to_rgb(self.stops[0]);
+        }
+        if t >= self.stops.last().unwrap().0 {
+            return to_rgb(*self.stops.last().unwrap());
+        }
+        for w in self.stops.windows(2) {
+            let (p0, r0, g0, b0) = w[0];
+            let (p1, r1, g1, b1) = w[1];
+            if t >= p0 && t <= p1 {
+                let f = if (p1 - p0).abs() > 1e-9 {
+                    (t - p0) / (p1 - p0)
+                } else {
+                    0.0
+                };
+                return [
+                    lerp_u8(r0, r1, f),
+                    lerp_u8(g0, g1, f),
+                    lerp_u8(b0, b1, f),
+                ];
+            }
+        }
+        to_rgb(*self.stops.last().unwrap())
+    }
+}
+
+fn to_rgb(stop: (f32, f32, f32, f32)) -> [u8; 3] {
+    [
+        (stop.1.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (stop.2.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (stop.3.clamp(0.0, 1.0) * 255.0).round() as u8,
+    ]
+}
+
+fn lerp_u8(a: f32, b: f32, t: f32) -> u8 {
+    ((a + (b - a) * t).clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
+pub fn builtin_colormap(name: &str) -> Option<Colormap> {
+    match name.to_lowercase().as_str() {
+        "viridis" => Some(viridis()),
+        "inferno" => Some(inferno()),
+        "magma" => Some(magma()),
+        "plasma" => Some(plasma()),
+        "turbo" => Some(turbo()),
+        "grayscale" => Some(grayscale()),
+        "heat" => Some(heat()),
+        _ => None,
+    }
+}
+
+pub fn builtin_colormap_names() -> Vec<&'static str> {
+    vec!["viridis", "inferno", "magma", "plasma", "turbo", "grayscale", "heat"]
+}
+
+pub fn default_colormap() -> Colormap {
+    viridis()
+}
+
+fn viridis() -> Colormap {
+    Colormap {
+        name: "viridis".into(),
+        stops: vec![
+            (0.000, 0.267, 0.004, 0.329),
+            (0.125, 0.282, 0.141, 0.458),
+            (0.250, 0.229, 0.299, 0.525),
+            (0.375, 0.127, 0.449, 0.510),
+            (0.500, 0.057, 0.568, 0.417),
+            (0.625, 0.170, 0.659, 0.274),
+            (0.750, 0.370, 0.731, 0.120),
+            (0.875, 0.678, 0.785, 0.052),
+            (1.000, 0.993, 0.906, 0.144),
+        ],
+    }
+}
+
+fn inferno() -> Colormap {
+    Colormap {
+        name: "inferno".into(),
+        stops: vec![
+            (0.000, 0.001, 0.000, 0.014),
+            (0.125, 0.106, 0.038, 0.158),
+            (0.250, 0.289, 0.076, 0.219),
+            (0.375, 0.492, 0.123, 0.189),
+            (0.500, 0.685, 0.207, 0.107),
+            (0.625, 0.851, 0.337, 0.045),
+            (0.750, 0.962, 0.518, 0.071),
+            (0.875, 0.988, 0.733, 0.282),
+            (1.000, 0.988, 0.998, 0.645),
+        ],
+    }
+}
+
+fn magma() -> Colormap {
+    Colormap {
+        name: "magma".into(),
+        stops: vec![
+            (0.000, 0.001, 0.001, 0.014),
+            (0.125, 0.130, 0.052, 0.218),
+            (0.250, 0.316, 0.104, 0.334),
+            (0.375, 0.512, 0.157, 0.340),
+            (0.500, 0.703, 0.222, 0.259),
+            (0.625, 0.863, 0.332, 0.163),
+            (0.750, 0.964, 0.504, 0.107),
+            (0.875, 0.994, 0.718, 0.281),
+            (1.000, 0.987, 0.991, 0.650),
+        ],
+    }
+}
+
+fn plasma() -> Colormap {
+    Colormap {
+        name: "plasma".into(),
+        stops: vec![
+            (0.000, 0.050, 0.030, 0.528),
+            (0.125, 0.291, 0.012, 0.652),
+            (0.250, 0.496, 0.012, 0.658),
+            (0.375, 0.674, 0.098, 0.559),
+            (0.500, 0.822, 0.224, 0.420),
+            (0.625, 0.933, 0.374, 0.267),
+            (0.750, 0.992, 0.554, 0.127),
+            (0.875, 0.987, 0.752, 0.045),
+            (1.000, 0.940, 0.975, 0.131),
+        ],
+    }
+}
+
+fn turbo() -> Colormap {
+    Colormap {
+        name: "turbo".into(),
+        stops: vec![
+            (0.000, 0.190, 0.072, 0.232),
+            (0.125, 0.152, 0.330, 0.844),
+            (0.250, 0.135, 0.577, 0.993),
+            (0.375, 0.304, 0.775, 0.762),
+            (0.500, 0.560, 0.886, 0.376),
+            (0.625, 0.793, 0.901, 0.106),
+            (0.750, 0.940, 0.735, 0.031),
+            (0.875, 0.940, 0.439, 0.028),
+            (1.000, 0.900, 0.125, 0.055),
+        ],
+    }
+}
+
+fn grayscale() -> Colormap {
+    Colormap {
+        name: "grayscale".into(),
+        stops: vec![
+            (0.0, 0.0, 0.0, 0.0),
+            (1.0, 1.0, 1.0, 1.0),
+        ],
+    }
+}
+
+fn heat() -> Colormap {
+    Colormap {
+        name: "heat".into(),
+        stops: vec![
+            (0.0, 0.0, 0.0, 0.0),
+            (0.25, 0.5, 0.0, 0.0),
+            (0.50, 1.0, 0.5, 0.0),
+            (0.75, 1.0, 1.0, 0.5),
+            (1.0, 1.0, 1.0, 1.0),
+        ],
+    }
+}

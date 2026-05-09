@@ -1,3 +1,4 @@
+use crate::colormap;
 use crate::{CoreError, SpectrumConfig, SpectrumProcessor};
 use image::{ImageBuffer, Rgb};
 use rayon::prelude::*;
@@ -9,7 +10,11 @@ pub struct SpectrogramImageConfig {
     pub width: u32,
     pub height: u32,
     pub scroll_right_to_left: bool,
+    #[serde(default = "default_colormap_name")]
+    pub colormap: String,
 }
+
+fn default_colormap_name() -> String { "viridis".into() }
 
 impl Default for SpectrogramImageConfig {
     fn default() -> Self {
@@ -18,6 +23,7 @@ impl Default for SpectrogramImageConfig {
             width: 800,
             height: 200,
             scroll_right_to_left: true,
+            colormap: "viridis".into(),
         }
     }
 }
@@ -69,6 +75,9 @@ pub fn render_spectrogram_png<P: AsRef<Path>>(
     let width = config.width.max(1);
     let height = config.height.max(1);
     let bins = config.spectrum.log_bins.max(1);
+    let cmap = colormap::builtin_colormap(&config.colormap)
+        .unwrap_or_else(colormap::default_colormap);
+    let lut = cmap.build_lut(256);
     let mut img = ImageBuffer::<Rgb<u8>, Vec<u8>>::new(width, height);
     for y in 0..height {
         for x in 0..width {
@@ -81,7 +90,8 @@ pub fn render_spectrogram_png<P: AsRef<Path>>(
                 let bin = sample_index(x, width, bins);
                 sample_column(columns, col, bin)
             };
-            img.put_pixel(x, y, Rgb(viridis_u8(value)));
+            let idx = (value.clamp(0.0, 1.0) * 255.0).round() as usize;
+            img.put_pixel(x, y, Rgb(lut[idx]));
         }
     }
     img.save(output)
@@ -102,17 +112,4 @@ fn sample_column(columns: &[Vec<f32>], col: usize, bin: usize) -> f32 {
         .and_then(|c| c.get(bin))
         .copied()
         .unwrap_or(0.0)
-}
-
-fn viridis_u8(t: f32) -> [u8; 3] {
-    let x = t.clamp(0.0, 1.0);
-    [
-        to_u8(-0.148 + x * (4.07 + x * (-6.86 + x * (4.83 - x * 1.37)))),
-        to_u8(0.102 + x * (0.62 + x * (1.54 + x * (-3.44 + x * 2.02)))),
-        to_u8(0.195 + x * (0.02 + x * (4.31 + x * (-7.02 + x * 3.24)))),
-    ]
-}
-
-fn to_u8(x: f32) -> u8 {
-    (x.clamp(0.0, 1.0) * 255.0).round() as u8
 }
