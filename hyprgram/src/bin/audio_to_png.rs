@@ -32,6 +32,8 @@ struct Args {
     hop: Option<usize>,
     #[arg(long = "window-fn", help = "Override: window function (hann, hamming, blackman, blackman-harris)")]
     window_fn: Option<String>,
+    #[arg(long = "band-agg", help = "Override: band aggregation (nearest, triangular)")]
+    band_agg: Option<String>,
     #[arg(long, help = "Override: output image width (px)")]
     width: Option<u32>,
     #[arg(long, help = "Override: output image height (px)")]
@@ -68,6 +70,13 @@ fn main() -> Result<()> {
             other => anyhow::bail!("unknown window function '{}'. Options: hann, hamming, blackman, blackman-harris", other),
         };
     }
+    if let Some(ref v) = args.band_agg {
+        image_config.spectrum.band_aggregation = match v.to_lowercase().as_str() {
+            "nearest" => hyprgram_core::BandAggregation::Nearest,
+            "triangular" => hyprgram_core::BandAggregation::Triangular,
+            other => anyhow::bail!("unknown band aggregation '{}'. Options: nearest, triangular", other),
+        };
+    }
     if let Some(v) = args.width { image_config.width = v; }
     if let Some(v) = args.height { image_config.height = v; }
     if args.legacy_vertical_scroll { image_config.scroll_right_to_left = false; }
@@ -75,7 +84,7 @@ fn main() -> Result<()> {
     eprintln!("=== hyprgram audio_to_png ===");
     eprintln!("input   : {}", args.input.display());
     eprintln!("output  : {}", args.output.display());
-    eprintln!("fft     : {} samples  |  hop : {} samples  |  window : {:?}", image_config.spectrum.window_size, image_config.spectrum.hop_size, image_config.spectrum.window_fn);
+    eprintln!("fft     : {} samples  |  hop : {} samples  |  window : {:?}  |  bands : {:?}", image_config.spectrum.window_size, image_config.spectrum.hop_size, image_config.spectrum.window_fn, image_config.spectrum.band_aggregation);
     eprintln!("bins    : {} (log)", image_config.spectrum.log_bins);
     eprintln!("image   : {} x {} px", image_config.width, image_config.height);
     eprintln!("scroll  : {}", if image_config.scroll_right_to_left { "right-to-left" } else { "top-to-bottom" });

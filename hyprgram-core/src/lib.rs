@@ -9,7 +9,7 @@ pub mod ring;
 pub mod profiles;
 
 pub use dsp::{
-    normalize_hop_size, SpectrumConfig, SpectrumProcessor, WindowFunction,
+    normalize_hop_size, BandAggregation, SpectrumConfig, SpectrumProcessor, WindowFunction,
     DEFAULT_FFT_HOP_SAMPLES, DEFAULT_FFT_WINDOW_SAMPLES,
 };
 pub use error::CoreError;

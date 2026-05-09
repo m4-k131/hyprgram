@@ -28,6 +28,8 @@ pub struct Args {
     pub hop: Option<usize>,
     #[arg(long = "window-fn", help = "Override: window function (hann, hamming, blackman, blackman-harris)")]
     pub window_fn: Option<String>,
+    #[arg(long = "band-agg", help = "Override: band aggregation (nearest, triangular)")]
+    pub band_agg: Option<String>,
     #[arg(long, help = "Override: window width (px)")]
     pub width: Option<u32>,
     #[arg(long, help = "Override: window height (px)")]

@@ -56,6 +56,14 @@ impl WindowFunction {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BandAggregation {
+    #[default]
+    Nearest,
+    Triangular,
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SpectrumConfig {
     pub window_size: usize,
@@ -68,6 +76,8 @@ pub struct SpectrumConfig {
     pub db_ceil: f32,
     #[serde(default)]
     pub window_fn: WindowFunction,
+    #[serde(default)]
+    pub band_aggregation: BandAggregation,
 }
 
 impl Default for SpectrumConfig {
@@ -82,6 +92,7 @@ impl Default for SpectrumConfig {
             db_floor: -80.0,
             db_ceil: 0.0,
             window_fn: WindowFunction::Hann,
+            band_aggregation: BandAggregation::Nearest,
         }
     }
 }
@@ -92,6 +103,7 @@ pub struct SpectrumProcessor {
     window: Vec<f32>,
     work_input: Vec<f32>,
     spectrum: Vec<Complex<f32>>,
+    band_weights: Vec<Vec<(usize, f32)>>,
     pending: Vec<f32>,
 }
 
@@ -106,6 +118,7 @@ impl SpectrumProcessor {
         let spectrum = r2c.make_output_vec();
         let work_input = r2c.make_input_vec();
         let window = cfg.window_fn.generate(cfg.window_size);
+        let band_weights = build_band_weights(&cfg);
         let pending_cap = cfg.window_size * 2;
         Ok(Self {
             cfg,
@@ -113,6 +126,7 @@ impl SpectrumProcessor {
             window,
             work_input,
             spectrum,
+            band_weights,
             pending: Vec::with_capacity(pending_cap),
         })
     }
@@ -147,19 +161,81 @@ impl SpectrumProcessor {
         let f_min = self.cfg.f_min_hz.max(1.0);
         let nfft = self.cfg.window_size;
         let kmax = self.spectrum.len().saturating_sub(1).max(1);
-        for i in 0..col.len() {
-            let t = i as f32 / (col.len().saturating_sub(1).max(1) as f32);
-            let f = f_min * (f_max / f_min).powf(t);
-            let bin_f = f * nfft as f32 / sr;
-            let k = (bin_f.round() as usize).clamp(1, kmax);
-            let re = self.spectrum[k].re;
-            let im = self.spectrum[k].im;
-            let mag = (re * re + im * im).sqrt() / nfft as f32;
-            let db = 20.0 * (mag + 1e-12).log10();
-            let u = ((db - self.cfg.db_floor) / (self.cfg.db_ceil - self.cfg.db_floor)).clamp(0.0, 1.0);
-            col[i] = u;
+        match self.cfg.band_aggregation {
+            BandAggregation::Nearest => {
+                for i in 0..col.len() {
+                    let t = i as f32 / (col.len().saturating_sub(1).max(1) as f32);
+                    let f = f_min * (f_max / f_min).powf(t);
+                    let bin_f = f * nfft as f32 / sr;
+                    let k = (bin_f.round() as usize).clamp(1, kmax);
+                    let re = self.spectrum[k].re;
+                    let im = self.spectrum[k].im;
+                    let mag = (re * re + im * im).sqrt() / nfft as f32;
+                    let db = 20.0 * (mag + 1e-12).log10();
+                    let u = ((db - self.cfg.db_floor) / (self.cfg.db_ceil - self.cfg.db_floor).max(1e-9)).clamp(0.0, 1.0);
+                    col[i] = u;
+                }
+            }
+            BandAggregation::Triangular => {
+                for i in 0..col.len() {
+                    let mut mag_sum = 0.0f32;
+                    let mut weight_sum = 0.0f32;
+                    for &(k, w) in &self.band_weights[i] {
+                        let re = self.spectrum[k].re;
+                        let im = self.spectrum[k].im;
+                        let mag = (re * re + im * im).sqrt() / nfft as f32;
+                        mag_sum += mag * w;
+                        weight_sum += w;
+                    }
+                    let mag = if weight_sum > 0.0 { mag_sum / weight_sum } else { 0.0 };
+                    let db = 20.0 * (mag + 1e-12).log10();
+                    let u = ((db - self.cfg.db_floor) / (self.cfg.db_ceil - self.cfg.db_floor).max(1e-9)).clamp(0.0, 1.0);
+                    col[i] = u;
+                }
+            }
         }
     }
+}
+
+fn build_band_weights(cfg: &SpectrumConfig) -> Vec<Vec<(usize, f32)>> {
+    let n_bins = cfg.log_bins.max(1);
+    let nfft = cfg.window_size;
+    let sr = cfg.sample_rate as f32;
+    let nyq = 0.499 * sr;
+    let f_max = cfg.f_max_hz.min(nyq).max(cfg.f_min_hz + 1.0);
+    let f_min = cfg.f_min_hz.max(1.0);
+    let kmax = (nfft / 2).max(1);
+    let mut weights = Vec::with_capacity(n_bins);
+    for i in 0..n_bins {
+        let t = i as f32 / (n_bins.saturating_sub(1).max(1) as f32);
+        let fc = f_min * (f_max / f_min).powf(t);
+        let t_prev = if i > 0 { (i - 1) as f32 / (n_bins.saturating_sub(1).max(1) as f32) } else { 0.0 };
+        let f_lo = f_min * (f_max / f_min).powf(t_prev);
+        let t_next = if i + 1 < n_bins { (i + 1) as f32 / (n_bins.saturating_sub(1).max(1) as f32) } else { 1.0 };
+        let f_hi = f_min * (f_max / f_min).powf(t_next);
+        let k_lo = ((f_lo * nfft as f32 / sr).floor() as usize).clamp(1, kmax);
+        let k_hi = ((f_hi * nfft as f32 / sr).ceil() as usize).clamp(1, kmax);
+        let mut band: Vec<(usize, f32)> = Vec::new();
+        for k in k_lo..=k_hi {
+            let fk = k as f32 * sr / nfft as f32;
+            let w = if fk <= f_lo || fk >= f_hi {
+                0.0
+            } else if fk <= fc {
+                (fk - f_lo) / (fc - f_lo).max(1e-9)
+            } else {
+                (f_hi - fk) / (f_hi - fc).max(1e-9)
+            };
+            if w > 0.0 {
+                band.push((k, w));
+            }
+        }
+        if band.is_empty() {
+            let k = ((fc * nfft as f32 / sr).round() as usize).clamp(1, kmax);
+            band.push((k, 1.0));
+        }
+        weights.push(band);
+    }
+    weights
 }
 
 #[cfg(test)]

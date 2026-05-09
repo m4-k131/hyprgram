@@ -42,6 +42,13 @@ impl App {
                 other => panic!("unknown window function '{}'", other),
             };
         }
+        if let Some(ref v) = args.band_agg {
+            spectrum.band_aggregation = match v.to_lowercase().as_str() {
+                "nearest" => hyprgram_core::BandAggregation::Nearest,
+                "triangular" => hyprgram_core::BandAggregation::Triangular,
+                other => panic!("unknown band aggregation '{}'", other),
+            };
+        }
         let img = profile.image.as_ref();
         let width = args.width.unwrap_or(img.map_or(800, |i| i.width));
         let height = args.height.unwrap_or(img.map_or(200, |i| i.height));

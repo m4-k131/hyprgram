@@ -8,6 +8,7 @@ f_max_hz = 20000.0
 db_floor = -80.0
 db_ceil = 0.0
 window_fn = "hann"
+band_aggregation = "nearest"
 
 [image]
 width = 800
