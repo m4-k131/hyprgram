@@ -42,7 +42,7 @@ struct Args {
     temporal_alpha: Option<f32>,
     #[arg(long = "peak-decay", help = "Override: peak hold decay per frame (0=off, 0.5-0.9 typical)")]
     peak_decay: Option<f32>,
-    #[arg(long = "colormap", help = "Override: colormap (viridis, inferno, magma, plasma, turbo, grayscale, heat)")]
+    #[arg(long = "colormap", help = "Override: colormap (viridis, inferno, magma, plasma, turbo, grayscale, heat, gruvbox-dark, catppuccin-mocha, nord, tokyo-night)")]
     colormap: Option<String>,
     #[arg(long, help = "Override: output image width (px)")]
     width: Option<u32>,
