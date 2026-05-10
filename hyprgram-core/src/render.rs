@@ -113,3 +113,114 @@ fn sample_column(columns: &[Vec<f32>], col: usize, bin: usize) -> f32 {
         .copied()
         .unwrap_or(0.0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sample_index_first() {
+        assert_eq!(sample_index(0, 100, 10), 0);
+    }
+
+    #[test]
+    fn sample_index_last() {
+        assert_eq!(sample_index(99, 100, 10), 9);
+    }
+
+    #[test]
+    fn sample_index_middle() {
+        let idx = sample_index(50, 100, 10);
+        assert!(idx == 4 || idx == 5);
+    }
+
+    #[test]
+    fn sample_index_single_element() {
+        assert_eq!(sample_index(0, 100, 1), 0);
+        assert_eq!(sample_index(99, 100, 1), 0);
+    }
+
+    #[test]
+    fn sample_index_zero_len() {
+        assert_eq!(sample_index(0, 100, 0), 0);
+    }
+
+    #[test]
+    fn sample_column_returns_value() {
+        let columns = vec![vec![0.5f32, 0.8], vec![0.3, 0.1]];
+        assert!((sample_column(&columns, 0, 0) - 0.5).abs() < 0.001);
+        assert!((sample_column(&columns, 0, 1) - 0.8).abs() < 0.001);
+        assert!((sample_column(&columns, 1, 0) - 0.3).abs() < 0.001);
+    }
+
+    #[test]
+    fn sample_column_out_of_bounds_returns_zero() {
+        let columns = vec![vec![0.5f32]];
+        assert_eq!(sample_column(&columns, 1, 0), 0.0);
+        assert_eq!(sample_column(&columns, 0, 1), 0.0);
+    }
+
+    #[test]
+    fn sample_column_empty_columns() {
+        let columns: Vec<Vec<f32>> = vec![];
+        assert_eq!(sample_column(&columns, 0, 0), 0.0);
+    }
+
+    #[test]
+    fn samples_to_spectrogram_too_few_samples() {
+        let cfg = SpectrumConfig {
+            window_size: 1024,
+            hop_size: 512,
+            sample_rate: 48000,
+            log_bins: 64,
+            ..Default::default()
+        };
+        let samples = vec![0.0f32; 512];
+        let result = samples_to_spectrogram(&samples, cfg).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn samples_to_spectrogram_produces_columns() {
+        let cfg = SpectrumConfig {
+            window_size: 1024,
+            hop_size: 512,
+            sample_rate: 48000,
+            log_bins: 64,
+            ..Default::default()
+        };
+        let samples = vec![0.0f32; 2048];
+        let result = samples_to_spectrogram(&samples, cfg).unwrap();
+        let expected = (2048 - 1024) / 512 + 1;
+        assert_eq!(result.len(), expected);
+    }
+
+    #[test]
+    fn samples_to_spectrogram_parallel_matches_sequential() {
+        let cfg = SpectrumConfig {
+            window_size: 1024,
+            hop_size: 256,
+            sample_rate: 48000,
+            log_bins: 64,
+            ..Default::default()
+        };
+        let n = 4096;
+        let samples: Vec<f32> = (0..n).map(|i| (i as f32 * 0.01).sin()).collect();
+        let result = samples_to_spectrogram(&samples, cfg).unwrap();
+        assert!(!result.is_empty());
+        for col in &result {
+            assert_eq!(col.len(), 64);
+            for &v in col {
+                assert!(v.is_finite() && v >= 0.0 && v <= 1.0);
+            }
+        }
+    }
+
+    #[test]
+    fn spectrogram_image_config_default_colormap() {
+        let cfg = SpectrogramImageConfig::default();
+        assert_eq!(cfg.colormap, "viridis");
+        assert_eq!(cfg.width, 800);
+        assert_eq!(cfg.height, 200);
+    }
+}

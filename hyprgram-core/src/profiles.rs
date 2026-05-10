@@ -78,3 +78,74 @@ pub fn builtin_profile(name: &str) -> Option<Profile> {
 pub fn builtin_profile_names() -> &'static [&'static str] {
     &["laptop", "default", "foobar-like"]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_builtin_profiles_exist() {
+        for name in builtin_profile_names() {
+            let p = builtin_profile(name);
+            assert!(p.is_some(), "profile '{name}' should exist");
+        }
+    }
+
+    #[test]
+    fn unknown_profile_returns_none() {
+        assert!(builtin_profile("nonexistent").is_none());
+    }
+
+    #[test]
+    fn laptop_profile_has_smaller_window() {
+        let p = builtin_profile("laptop").unwrap();
+        assert_eq!(p.spectrum.window_size, 4096);
+        assert_eq!(p.spectrum.log_bins, 128);
+    }
+
+    #[test]
+    fn foobar_like_profile_has_large_window() {
+        let p = builtin_profile("foobar-like").unwrap();
+        assert_eq!(p.spectrum.window_size, 32768);
+        assert_eq!(p.spectrum.log_bins, 512);
+    }
+
+    #[test]
+    fn default_profile_matches_default_config() {
+        let p = builtin_profile("default").unwrap();
+        let default_cfg = SpectrumConfig::default();
+        assert_eq!(p.spectrum.window_size, default_cfg.window_size);
+        assert_eq!(p.spectrum.log_bins, default_cfg.log_bins);
+    }
+
+    #[test]
+    fn to_image_config_defaults() {
+        let profile = Profile {
+            spectrum: SpectrumConfig::default(),
+            image: None,
+        };
+        let cfg = profile.to_image_config();
+        assert_eq!(cfg.width, 800);
+        assert_eq!(cfg.height, 200);
+        assert_eq!(cfg.colormap, "viridis");
+        assert!(cfg.scroll_right_to_left);
+    }
+
+    #[test]
+    fn to_image_config_with_image_section() {
+        let profile = Profile {
+            spectrum: SpectrumConfig::default(),
+            image: Some(ProfileImage {
+                width: 1920,
+                height: 400,
+                scroll_right_to_left: false,
+                colormap: "inferno".into(),
+            }),
+        };
+        let cfg = profile.to_image_config();
+        assert_eq!(cfg.width, 1920);
+        assert_eq!(cfg.height, 400);
+        assert_eq!(cfg.colormap, "inferno");
+        assert!(!cfg.scroll_right_to_left);
+    }
+}

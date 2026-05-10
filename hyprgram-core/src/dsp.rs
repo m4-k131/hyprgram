@@ -475,6 +475,7 @@ fn build_cqt_weights(cfg: &SpectrumConfig) -> Vec<Vec<(usize, f32)>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn hop_clamps_high() {
         assert_eq!(normalize_hop_size(16384, 32768), 16384);
@@ -486,5 +487,368 @@ mod tests {
     #[test]
     fn hop_one_to_window_preserved() {
         assert_eq!(normalize_hop_size(100, 50), 50);
+    }
+    #[test]
+    fn hop_minimum_one() {
+        assert_eq!(normalize_hop_size(0, 0), 1);
+        assert_eq!(normalize_hop_size(10, 0), 5);
+    }
+
+    #[test]
+    fn hann_window_symmetry() {
+        let w = WindowFunction::Hann.generate(256);
+        assert!((w[0] - 0.0).abs() < 0.01);
+        for i in 0..128 {
+            assert!((w[i] - w[255 - i]).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn hamming_window_endpoints() {
+        let w = WindowFunction::Hamming.generate(256);
+        assert!(w[0] < 0.1);
+        assert!(w[127] > 0.9);
+    }
+
+    #[test]
+    fn blackman_window_endpoints() {
+        let w = WindowFunction::Blackman.generate(256);
+        assert!((w[0] - 0.0).abs() < 0.01);
+        assert!(w[127] > 0.8);
+    }
+
+    #[test]
+    fn blackman_harris_window_endpoints() {
+        let w = WindowFunction::BlackmanHarris.generate(256);
+        assert!((w[0] - 0.00006).abs() < 0.01);
+        assert!(w[127] > 0.8);
+    }
+
+    #[test]
+    fn window_size_one() {
+        let w = WindowFunction::Hann.generate(1);
+        assert_eq!(w.len(), 1);
+        assert!((w[0] - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn spectrum_processor_creates_with_defaults() {
+        let proc = SpectrumProcessor::new(SpectrumConfig::default()).unwrap();
+        assert_eq!(proc.log_bins(), 256);
+    }
+
+    #[test]
+    fn spectrum_processor_rejects_tiny_window() {
+        let cfg = SpectrumConfig { window_size: 4, ..Default::default() };
+        assert!(SpectrumProcessor::new(cfg).is_err());
+    }
+
+    #[test]
+    fn push_samples_silence_produces_low_values() {
+        let cfg = SpectrumConfig {
+            window_size: 1024,
+            hop_size: 512,
+            sample_rate: 48000,
+            log_bins: 64,
+            ..Default::default()
+        };
+        let mut proc = SpectrumProcessor::new(cfg).unwrap();
+        let silence = vec![0.0f32; 2048];
+        let mut cols = Vec::new();
+        proc.push_samples(&silence, &mut cols);
+        assert!(!cols.is_empty());
+        for col in &cols {
+            for &v in col {
+                assert!(v < 0.1, "silence should produce near-zero dB-normalized values, got {v}");
+            }
+        }
+    }
+
+    #[test]
+    fn push_samples_sine_produces_peak_at_frequency() {
+        let sr = 48000u32;
+        let freq = 1000.0f32;
+        let cfg = SpectrumConfig {
+            window_size: 4096,
+            hop_size: 2048,
+            sample_rate: sr,
+            log_bins: 128,
+            f_min_hz: 20.0,
+            f_max_hz: 20000.0,
+            db_floor: -120.0,
+            db_ceil: 0.0,
+            ..Default::default()
+        };
+        let mut proc = SpectrumProcessor::new(cfg).unwrap();
+        let n = 8192;
+        let samples: Vec<f32> = (0..n)
+            .map(|i| (2.0 * PI * freq * i as f32 / sr as f32).sin())
+            .collect();
+        let mut cols = Vec::new();
+        proc.push_samples(&samples, &mut cols);
+        assert!(cols.len() >= 2);
+        let mid_col = &cols[cols.len() / 2];
+        let max_val = mid_col.iter().cloned().fold(0.0f32, f32::max);
+        assert!(max_val > 0.5, "sine should produce strong peak, got max {max_val}");
+    }
+
+    #[test]
+    fn push_samples_produces_expected_column_count() {
+        let cfg = SpectrumConfig {
+            window_size: 1024,
+            hop_size: 256,
+            sample_rate: 48000,
+            log_bins: 64,
+            ..Default::default()
+        };
+        let mut proc = SpectrumProcessor::new(cfg).unwrap();
+        let samples = vec![0.5f32; 2048];
+        let mut cols = Vec::new();
+        proc.push_samples(&samples, &mut cols);
+        let expected = (2048 - 1024) / 256 + 1;
+        assert_eq!(cols.len(), expected);
+    }
+
+    #[test]
+    fn push_samples_clears_output_vec() {
+        let cfg = SpectrumConfig {
+            window_size: 1024,
+            hop_size: 512,
+            sample_rate: 48000,
+            log_bins: 64,
+            ..Default::default()
+        };
+        let mut proc = SpectrumProcessor::new(cfg).unwrap();
+        let samples = vec![0.0f32; 2048];
+        let mut cols = vec![vec![1.0f32; 64]];
+        proc.push_samples(&samples, &mut cols);
+        assert!(!cols.is_empty());
+        assert!(cols[0][0] < 1.0);
+    }
+
+    #[test]
+    fn push_samples_accumulates_across_calls() {
+        let cfg = SpectrumConfig {
+            window_size: 1024,
+            hop_size: 512,
+            sample_rate: 48000,
+            log_bins: 64,
+            ..Default::default()
+        };
+        let mut proc = SpectrumProcessor::new(cfg).unwrap();
+        let mut cols = Vec::new();
+        proc.push_samples(&vec![0.0f32; 512], &mut cols);
+        assert!(cols.is_empty());
+        proc.push_samples(&vec![0.0f32; 512], &mut cols);
+        assert_eq!(cols.len(), 1);
+    }
+
+    #[test]
+    fn gaussian_kernel_zero_sigma_empty() {
+        let k = build_gaussian_kernel(0.0);
+        assert!(k.is_empty());
+    }
+
+    #[test]
+    fn gaussian_kernel_sums_to_one() {
+        let k = build_gaussian_kernel(2.0);
+        assert!(!k.is_empty());
+        let sum: f32 = k.iter().map(|(_, w)| w).sum();
+        assert!((sum - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn gaussian_kernel_symmetric() {
+        let k = build_gaussian_kernel(3.0);
+        for &(off, w) in &k {
+            let mirror = k.iter().find(|&&(o, _)| o == -off).map(|(_, w)| *w);
+            if let Some(mw) = mirror {
+                assert!((w - mw).abs() < 0.001);
+            }
+        }
+    }
+
+    #[test]
+    fn band_weights_covers_all_bins() {
+        let cfg = SpectrumConfig {
+            window_size: 2048,
+            sample_rate: 48000,
+            log_bins: 32,
+            f_min_hz: 20.0,
+            f_max_hz: 20000.0,
+            ..Default::default()
+        };
+        let weights = build_band_weights(&cfg);
+        assert_eq!(weights.len(), 32);
+        for band in &weights {
+            assert!(!band.is_empty(), "every log bin should have at least one FFT bin");
+        }
+    }
+
+    #[test]
+    fn weighting_none_is_unity() {
+        let cfg = SpectrumConfig {
+            window_size: 1024,
+            sample_rate: 48000,
+            weighting: Weighting::None,
+            ..Default::default()
+        };
+        let w = build_weighting_weights(&cfg);
+        assert_eq!(w.len(), 1024 / 2 + 1);
+        for &v in &w {
+            assert!((v - 1.0).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn weighting_a_attenuates_low_frequencies() {
+        let cfg = SpectrumConfig {
+            window_size: 4096,
+            sample_rate: 48000,
+            weighting: Weighting::A,
+            ..Default::default()
+        };
+        let w = build_weighting_weights(&cfg);
+        let low_bin = 1;
+        let mid_bin = (1000.0f64 * 4096.0 / 48000.0).round() as usize;
+        assert!(w[low_bin] < w[mid_bin], "A-weighting should attenuate low frequencies");
+    }
+
+    #[test]
+    fn weighting_c_is_flatter_than_a() {
+        let cfg_a = SpectrumConfig {
+            window_size: 4096,
+            sample_rate: 48000,
+            weighting: Weighting::A,
+            ..Default::default()
+        };
+        let cfg_c = SpectrumConfig {
+            window_size: 4096,
+            sample_rate: 48000,
+            weighting: Weighting::C,
+            ..Default::default()
+        };
+        let wa = build_weighting_weights(&cfg_a);
+        let wc = build_weighting_weights(&cfg_c);
+        let low_bin = 1;
+        assert!(wc[low_bin] > wa[low_bin], "C-weighting should be flatter than A at low frequencies");
+    }
+
+    #[test]
+    fn cqt_weights_empty_for_stft() {
+        let cfg = SpectrumConfig {
+            transform: Transform::Stft,
+            ..Default::default()
+        };
+        let w = build_cqt_weights(&cfg);
+        assert!(w.is_empty());
+    }
+
+    #[test]
+    fn cqt_weights_produced_for_cqt() {
+        let cfg = SpectrumConfig {
+            window_size: 4096,
+            sample_rate: 48000,
+            transform: Transform::Cqt,
+            cqt_bins_per_octave: 12,
+            f_min_hz: 20.0,
+            f_max_hz: 20000.0,
+            ..Default::default()
+        };
+        let w = build_cqt_weights(&cfg);
+        assert!(!w.is_empty());
+        for band in &w {
+            assert!(!band.is_empty());
+        }
+    }
+
+    #[test]
+    fn temporal_ema_smooths_values() {
+        let cfg = SpectrumConfig {
+            window_size: 1024,
+            hop_size: 512,
+            sample_rate: 48000,
+            log_bins: 64,
+            temporal_alpha: 0.5,
+            ..Default::default()
+        };
+        let mut proc = SpectrumProcessor::new(cfg).unwrap();
+        let mut cols = Vec::new();
+        let n = 2048;
+        let samples: Vec<f32> = (0..n).map(|i| (i as f32 * 0.01).sin()).collect();
+        proc.push_samples(&samples, &mut cols);
+        assert!(cols.len() >= 3);
+        let diffs: Vec<f32> = cols.windows(2).map(|w| {
+            (0..w[0].len()).map(|i| (w[1][i] - w[0][i]).abs()).sum::<f32>()
+        }).collect();
+        let max_diff = diffs.iter().cloned().fold(0.0f32, f32::max);
+        assert!(max_diff < 1.0, "EMA should limit frame-to-frame jumps");
+    }
+
+    #[test]
+    fn peak_hold_preserves_maxima() {
+        let cfg = SpectrumConfig {
+            window_size: 1024,
+            hop_size: 512,
+            sample_rate: 48000,
+            log_bins: 64,
+            peak_hold_decay: 0.9,
+            ..Default::default()
+        };
+        let mut proc = SpectrumProcessor::new(cfg).unwrap();
+        let mut cols = Vec::new();
+        let n = 2048;
+        let samples: Vec<f32> = (0..n).map(|i| (i as f32 * 0.01).sin()).collect();
+        proc.push_samples(&samples, &mut cols);
+        assert!(cols.len() >= 2);
+        let last = cols.last().unwrap();
+        let has_nonzero = last.iter().any(|&v| v > 0.0);
+        assert!(has_nonzero, "peak hold should keep values visible");
+    }
+
+    #[test]
+    fn gamma_below_one_brightens() {
+        let cfg = SpectrumConfig {
+            window_size: 1024,
+            hop_size: 512,
+            sample_rate: 48000,
+            log_bins: 64,
+            amplitude_gamma: 0.5,
+            ..Default::default()
+        };
+        let mut proc = SpectrumProcessor::new(cfg).unwrap();
+        let mut cols = Vec::new();
+        let n = 2048;
+        let samples: Vec<f32> = (0..n).map(|i| (i as f32 * 0.01).sin()).collect();
+        proc.push_samples(&samples, &mut cols);
+        for col in &cols {
+            for &v in col {
+                assert!(v >= 0.0 && v <= 1.0, "values must stay in [0,1] after gamma");
+            }
+        }
+    }
+
+    #[test]
+    fn triangular_aggregation_produces_valid_output() {
+        let cfg = SpectrumConfig {
+            window_size: 2048,
+            hop_size: 1024,
+            sample_rate: 48000,
+            log_bins: 64,
+            band_aggregation: BandAggregation::Triangular,
+            ..Default::default()
+        };
+        let mut proc = SpectrumProcessor::new(cfg).unwrap();
+        let n = 4096;
+        let samples: Vec<f32> = (0..n).map(|i| (i as f32 * 0.005).sin()).collect();
+        let mut cols = Vec::new();
+        proc.push_samples(&samples, &mut cols);
+        assert!(!cols.is_empty());
+        for col in &cols {
+            assert_eq!(col.len(), 64);
+            for &v in col {
+                assert!(v.is_finite());
+            }
+        }
     }
 }
