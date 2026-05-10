@@ -13,6 +13,7 @@ freq_smoothing_sigma = 0.0
 amplitude_gamma = 1.0
 temporal_alpha = 0.0
 peak_hold_decay = 0.0
+weighting = "none"
 
 [image]
 width = 800

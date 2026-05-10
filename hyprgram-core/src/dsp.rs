@@ -58,6 +58,15 @@ impl WindowFunction {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
+pub enum Weighting {
+    #[default]
+    None,
+    A,
+    C,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum BandAggregation {
     #[default]
     Nearest,
@@ -86,6 +95,8 @@ pub struct SpectrumConfig {
     pub temporal_alpha: f32,
     #[serde(default)]
     pub peak_hold_decay: f32,
+    #[serde(default)]
+    pub weighting: Weighting,
 }
 
 fn default_gamma() -> f32 { 1.0 }
@@ -107,6 +118,7 @@ impl Default for SpectrumConfig {
             amplitude_gamma: 1.0,
             temporal_alpha: 0.0,
             peak_hold_decay: 0.0,
+            weighting: Weighting::None,
         }
     }
 }
@@ -122,6 +134,7 @@ pub struct SpectrumProcessor {
     prev_column: Vec<f32>,
     peak_column: Vec<f32>,
     pending: Vec<f32>,
+    weighting_weights: Vec<f32>,
 }
 
 impl SpectrumProcessor {
@@ -137,6 +150,7 @@ impl SpectrumProcessor {
         let window = cfg.window_fn.generate(cfg.window_size);
         let band_weights = build_band_weights(&cfg);
         let smoothing_kernel = build_gaussian_kernel(cfg.freq_smoothing_sigma);
+        let weighting_weights = build_weighting_weights(&cfg);
         let pending_cap = cfg.window_size * 2;
         Ok(Self {
             cfg,
@@ -149,6 +163,7 @@ impl SpectrumProcessor {
             prev_column: Vec::new(),
             peak_column: Vec::new(),
             pending: Vec::with_capacity(pending_cap),
+            weighting_weights,
         })
     }
     pub fn set_sample_rate(&mut self, sr: u32) {
@@ -192,7 +207,7 @@ impl SpectrumProcessor {
                     let k = (bin_f.round() as usize).clamp(1, kmax);
                     let re = self.spectrum[k].re;
                     let im = self.spectrum[k].im;
-                    let mag = (re * re + im * im).sqrt() / nfft as f32;
+                    let mag = (re * re + im * im).sqrt() / nfft as f32 * self.weighting_weights[k];
                     let db = 20.0 * (mag + 1e-12).log10();
                     let u = ((db - self.cfg.db_floor) / (self.cfg.db_ceil - self.cfg.db_floor).max(1e-9)).clamp(0.0, 1.0);
                     col[i] = u;
@@ -205,7 +220,7 @@ impl SpectrumProcessor {
                     for &(k, w) in &self.band_weights[i] {
                         let re = self.spectrum[k].re;
                         let im = self.spectrum[k].im;
-                        let mag = (re * re + im * im).sqrt() / nfft as f32;
+                        let mag = (re * re + im * im).sqrt() / nfft as f32 * self.weighting_weights[k];
                         mag_sum += mag * w;
                         weight_sum += w;
                     }
@@ -321,6 +336,55 @@ fn build_gaussian_kernel(sigma: f32) -> Vec<(isize, f32)> {
         }
     }
     taps
+}
+
+fn build_weighting_weights(cfg: &SpectrumConfig) -> Vec<f32> {
+    let nfft = cfg.window_size;
+    let sr = cfg.sample_rate as f32;
+    let n_bins = nfft / 2 + 1;
+    let mut w = vec![1.0f32; n_bins];
+    match cfg.weighting {
+        Weighting::None => {}
+        Weighting::A => {
+            for k in 0..n_bins {
+                let f = k as f32 * sr / nfft as f32;
+                let f2 = f * f;
+                let num = 12194.0f32.powi(2) * f2 * f2;
+                let den = (f2 + 20.6f32.powi(2))
+                    * (f2 + 107.7f32.powi(2)).sqrt()
+                    * (f2 + 737.9f32.powi(2)).sqrt()
+                    * (f2 + 12194.0f32.powi(2));
+                let ra = if den > 0.0 { num / den } else { 0.0 };
+                let ref_f = 1000.0;
+                let ref_f2 = ref_f * ref_f;
+                let ref_num = 12194.0f32.powi(2) * ref_f2 * ref_f2;
+                let ref_den = (ref_f2 + 20.6f32.powi(2))
+                    * (ref_f2 + 107.7f32.powi(2)).sqrt()
+                    * (ref_f2 + 737.9f32.powi(2)).sqrt()
+                    * (ref_f2 + 12194.0f32.powi(2));
+                let ra_ref = ref_num / ref_den;
+                let a_weight = if ra_ref > 0.0 { ra / ra_ref } else { 1.0 };
+                w[k] = a_weight;
+            }
+        }
+        Weighting::C => {
+            for k in 0..n_bins {
+                let f = k as f32 * sr / nfft as f32;
+                let f2 = f * f;
+                let num = 12194.0f32.powi(2) * f2;
+                let den = (f2 + 20.6f32.powi(2)) * (f2 + 12194.0f32.powi(2));
+                let rc = if den > 0.0 { num / den } else { 0.0 };
+                let ref_f = 1000.0;
+                let ref_f2 = ref_f * ref_f;
+                let ref_num = 12194.0f32.powi(2) * ref_f2;
+                let ref_den = (ref_f2 + 20.6f32.powi(2)) * (ref_f2 + 12194.0f32.powi(2));
+                let rc_ref = ref_num / ref_den;
+                let c_weight = if rc_ref > 0.0 { rc / rc_ref } else { 1.0 };
+                w[k] = c_weight;
+            }
+        }
+    }
+    w
 }
 
 #[cfg(test)]

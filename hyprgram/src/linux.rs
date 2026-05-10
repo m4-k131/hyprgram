@@ -53,6 +53,14 @@ impl App {
         if let Some(v) = args.gamma { spectrum.amplitude_gamma = v; }
         if let Some(v) = args.temporal_alpha { spectrum.temporal_alpha = v; }
         if let Some(v) = args.peak_decay { spectrum.peak_hold_decay = v; }
+        if let Some(ref v) = args.weighting {
+            spectrum.weighting = match v.to_lowercase().as_str() {
+                "none" => hyprgram_core::Weighting::None,
+                "a" => hyprgram_core::Weighting::A,
+                "c" => hyprgram_core::Weighting::C,
+                other => panic!("unknown weighting '{}'", other),
+            };
+        }
         let colormap_name = args.colormap.as_deref().unwrap_or("viridis");
         let img = profile.image.as_ref();
         let width = args.width.unwrap_or(img.map_or(800, |i| i.width));
