@@ -98,10 +98,13 @@ PipeWire capture thread
 - **Offline PNG**: `audio_to_png` binary works on Windows, macOS, Linux
 - **Live GPU rendering**: Linux/Wayland only (iced + wgpu + PipeWire)
 - **Verbose progress**: decode packets, FFT windows/s, render timing
+- **A/C-weighting**: IEC 61672 A and C frequency weighting curves
+- **CQT**: constant-Q transform with configurable bins/octave (alternative to STFT+log)
+- **Non-power-of-two FFT**: supported by rustfft mixed-radix planner
 
 ## What's NOT yet implemented
 
-See `ROADMAP.md` for full list. Phase 1 complete. Next: Phase 2 — Transform upgrades (CQT, non-power-of-two FFT, weighting).
+See `ROADMAP.md` for full list. Phase 1 and 2 complete. Next: Phase 3 — Realtime integration (Linux/Wayland).
 
 ---
 

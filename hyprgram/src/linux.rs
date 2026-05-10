@@ -61,6 +61,14 @@ impl App {
                 other => panic!("unknown weighting '{}'", other),
             };
         }
+        if let Some(ref v) = args.transform {
+            spectrum.transform = match v.to_lowercase().as_str() {
+                "stft" => hyprgram_core::Transform::Stft,
+                "cqt" => hyprgram_core::Transform::Cqt,
+                other => panic!("unknown transform '{}'", other),
+            };
+        }
+        if let Some(v) = args.cqt_bpo { spectrum.cqt_bins_per_octave = v; }
         let colormap_name = args.colormap.as_deref().unwrap_or("viridis");
         let img = profile.image.as_ref();
         let width = args.width.unwrap_or(img.map_or(800, |i| i.width));

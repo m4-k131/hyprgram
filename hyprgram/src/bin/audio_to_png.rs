@@ -46,6 +46,10 @@ struct Args {
     colormap: Option<String>,
     #[arg(long = "weighting", help = "Override: frequency weighting (none, a, c)")]
     weighting: Option<String>,
+    #[arg(long = "transform", help = "Override: transform (stft, cqt)")]
+    transform: Option<String>,
+    #[arg(long = "cqt-bpo", help = "Override: CQT bins per octave (default 12)")]
+    cqt_bpo: Option<u32>,
     #[arg(long, help = "Override: output image width (px)")]
     width: Option<u32>,
     #[arg(long, help = "Override: output image height (px)")]
@@ -102,6 +106,14 @@ fn main() -> Result<()> {
             other => anyhow::bail!("unknown weighting '{}'. Options: none, a, c", other),
         };
     }
+    if let Some(ref v) = args.transform {
+        image_config.spectrum.transform = match v.to_lowercase().as_str() {
+            "stft" => hyprgram_core::Transform::Stft,
+            "cqt" => hyprgram_core::Transform::Cqt,
+            other => anyhow::bail!("unknown transform '{}'. Options: stft, cqt", other),
+        };
+    }
+    if let Some(v) = args.cqt_bpo { image_config.spectrum.cqt_bins_per_octave = v; }
     if let Some(v) = args.width { image_config.width = v; }
     if let Some(v) = args.height { image_config.height = v; }
     if args.legacy_vertical_scroll { image_config.scroll_right_to_left = false; }
@@ -112,7 +124,10 @@ fn main() -> Result<()> {
     eprintln!("fft     : {} samples  |  hop : {} samples  |  window : {:?}  |  bands : {:?}", image_config.spectrum.window_size, image_config.spectrum.hop_size, image_config.spectrum.window_fn, image_config.spectrum.band_aggregation);
     eprintln!("smooth  : {:.2} sigma  |  gamma : {:.2}  |  ema : {:.2}  |  peak : {:.2}", image_config.spectrum.freq_smoothing_sigma, image_config.spectrum.amplitude_gamma, image_config.spectrum.temporal_alpha, image_config.spectrum.peak_hold_decay);
     eprintln!("cmap    : {}", image_config.colormap);
-    eprintln!("weight  : {:?}", image_config.spectrum.weighting);
+    eprintln!("weight  : {:?}  |  transform : {:?}", image_config.spectrum.weighting, image_config.spectrum.transform);
+    if image_config.spectrum.transform == hyprgram_core::Transform::Cqt {
+        eprintln!("cqt     : {} bins/octave", image_config.spectrum.cqt_bins_per_octave);
+    }
     eprintln!("bins    : {} (log)", image_config.spectrum.log_bins);
     eprintln!("image   : {} x {} px", image_config.width, image_config.height);
     eprintln!("scroll  : {}", if image_config.scroll_right_to_left { "right-to-left" } else { "top-to-bottom" });

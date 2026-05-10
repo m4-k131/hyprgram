@@ -42,6 +42,10 @@ pub struct Args {
     pub colormap: Option<String>,
     #[arg(long = "weighting", help = "Override: frequency weighting (none, a, c)")]
     pub weighting: Option<String>,
+    #[arg(long = "transform", help = "Override: transform (stft, cqt)")]
+    pub transform: Option<String>,
+    #[arg(long = "cqt-bpo", help = "Override: CQT bins per octave (default 12)")]
+    pub cqt_bpo: Option<u32>,
     #[arg(long, help = "Override: window width (px)")]
     pub width: Option<u32>,
     #[arg(long, help = "Override: window height (px)")]
