@@ -1,7 +1,7 @@
 use crate::Args;
 use hyprgram::dev::{effective_spectrogram_history, SpectrogramDevConfig};
 use hyprgram::spectrogram::SpectrogramProgram;
-use hyprgram_core::{profiles, SampleRing, SpectrumConfig, SpectrumProcessor};
+use hyprgram_core::{profiles, SampleRing, SpectrumProcessor};
 use iced::widget::container;
 use iced::widget::shader::Shader;
 use iced::{Element, Length, Size, Subscription, Task};
@@ -69,7 +69,7 @@ impl App {
             };
         }
         if let Some(v) = args.cqt_bpo { spectrum.cqt_bins_per_octave = v; }
-        let colormap_name = args.colormap.as_deref().unwrap_or("viridis");
+        let _colormap_name = args.colormap.as_deref().unwrap_or("viridis");
         let img = profile.image.as_ref();
         let width = args.width.unwrap_or(img.map_or(800, |i| i.width));
         let height = args.height.unwrap_or(img.map_or(200, |i| i.height));
@@ -130,7 +130,7 @@ fn subscription(_app: &App) -> Subscription<Message> {
 }
 
 pub fn run(args: Args) -> anyhow::Result<()> {
-    let size = Size::new(args.width as f32, args.height as f32);
+    let size = Size::new(args.width.unwrap_or(800) as f32, args.height.unwrap_or(200) as f32);
     iced::application(move || App::bootstrap(args.clone()), update, view)
         .title("hyprgram")
         .window_size(size)
