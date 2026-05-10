@@ -313,3 +313,138 @@ fn tokyo_night_5() -> Colormap {
         ],
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lut_size_256() {
+        let cmap = viridis();
+        let lut = cmap.build_lut(256);
+        assert_eq!(lut.len(), 256);
+    }
+
+    #[test]
+    fn lut_minimum_size_two() {
+        let cmap = viridis();
+        let lut = cmap.build_lut(1);
+        assert_eq!(lut.len(), 2);
+    }
+
+    #[test]
+    fn lut_first_is_dark() {
+        let cmap = viridis();
+        let lut = cmap.build_lut(256);
+        let [r, g, b] = lut[0];
+        assert!(r < 80 && g < 10 && b < 100, "viridis start should be dark purple");
+    }
+
+    #[test]
+    fn lut_last_is_bright() {
+        let cmap = viridis();
+        let lut = cmap.build_lut(256);
+        let [r, g, b] = lut[255];
+        assert!(r > 200 && g > 200 && b < 100, "viridis end should be bright yellow");
+    }
+
+    #[test]
+    fn grayscale_lut_is_neutral() {
+        let cmap = grayscale();
+        let lut = cmap.build_lut(256);
+        let [r, g, b] = lut[128];
+        assert!((r as i32 - g as i32).abs() <= 1);
+        assert!((g as i32 - b as i32).abs() <= 1);
+    }
+
+    #[test]
+    fn heat_lut_starts_black() {
+        let cmap = heat();
+        let lut = cmap.build_lut(256);
+        let [r, g, b] = lut[0];
+        assert_eq!(r, 0);
+        assert_eq!(g, 0);
+        assert_eq!(b, 0);
+    }
+
+    #[test]
+    fn heat_lut_ends_white() {
+        let cmap = heat();
+        let lut = cmap.build_lut(256);
+        let [r, g, b] = lut[255];
+        assert_eq!(r, 255);
+        assert_eq!(g, 255);
+        assert_eq!(b, 255);
+    }
+
+    #[test]
+    fn all_builtin_colormaps_exist() {
+        for name in builtin_colormap_names() {
+            let cmap = builtin_colormap(name);
+            assert!(cmap.is_some(), "colormap '{name}' should exist");
+            let lut = cmap.unwrap().build_lut(256);
+            assert_eq!(lut.len(), 256);
+        }
+    }
+
+    #[test]
+    fn unknown_colormap_returns_none() {
+        assert!(builtin_colormap("nonexistent").is_none());
+    }
+
+    #[test]
+    fn default_colormap_is_viridis() {
+        let cmap = default_colormap();
+        assert_eq!(cmap.name(), "viridis");
+    }
+
+    #[test]
+    fn sample_at_zero_matches_first_stop() {
+        let cmap = viridis();
+        let lut = cmap.build_lut(256);
+        let c0 = cmap.sample(0.0);
+        assert_eq!(c0, lut[0]);
+    }
+
+    #[test]
+    fn sample_at_one_matches_last_stop() {
+        let cmap = viridis();
+        let lut = cmap.build_lut(256);
+        let c1 = cmap.sample(1.0);
+        assert_eq!(c1, lut[255]);
+    }
+
+    #[test]
+    fn sample_clamps_out_of_range() {
+        let cmap = viridis();
+        let below = cmap.sample(-0.5);
+        let above = cmap.sample(1.5);
+        let at_zero = cmap.sample(0.0);
+        let at_one = cmap.sample(1.0);
+        assert_eq!(below, at_zero);
+        assert_eq!(above, at_one);
+    }
+
+    #[test]
+    fn to_rgb_scales_correctly() {
+        assert_eq!(to_rgb((0.0, 0.0, 0.0, 0.0)), [0, 0, 0]);
+        assert_eq!(to_rgb((0.0, 1.0, 1.0, 1.0)), [255, 255, 255]);
+        assert_eq!(to_rgb((0.0, 0.5, 0.0, 0.0)), [128, 0, 0]);
+    }
+
+    #[test]
+    fn lerp_u8_interpolates() {
+        assert_eq!(lerp_u8(0.0, 1.0, 0.0), 0);
+        assert_eq!(lerp_u8(0.0, 1.0, 1.0), 255);
+        assert_eq!(lerp_u8(0.0, 1.0, 0.5), 128);
+    }
+
+    #[test]
+    fn lut_is_monotonically_increasing_in_brightness() {
+        let cmap = grayscale();
+        let lut = cmap.build_lut(256);
+        for i in 1..256 {
+            assert!(lut[i][0] >= lut[i - 1][0]);
+        }
+    }
+}

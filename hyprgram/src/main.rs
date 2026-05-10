@@ -40,6 +40,12 @@ pub struct Args {
     pub peak_decay: Option<f32>,
     #[arg(long = "colormap", help = "Override: colormap (viridis, inferno, magma, plasma, turbo, grayscale, heat, gruvbox-dark, gruvbox-dark-5, catppuccin-mocha, catppuccin-mocha-5, nord, nord-5, tokyo-night, tokyo-night-5)")]
     pub colormap: Option<String>,
+    #[arg(long = "weighting", help = "Override: frequency weighting (none, a, c)")]
+    pub weighting: Option<String>,
+    #[arg(long = "transform", help = "Override: transform (stft, cqt)")]
+    pub transform: Option<String>,
+    #[arg(long = "cqt-bpo", help = "Override: CQT bins per octave (default 12)")]
+    pub cqt_bpo: Option<u32>,
     #[arg(long, help = "Override: window width (px)")]
     pub width: Option<u32>,
     #[arg(long, help = "Override: window height (px)")]

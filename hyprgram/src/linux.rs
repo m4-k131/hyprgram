@@ -1,7 +1,7 @@
 use crate::Args;
 use hyprgram::dev::{effective_spectrogram_history, SpectrogramDevConfig};
 use hyprgram::spectrogram::SpectrogramProgram;
-use hyprgram_core::{profiles, SampleRing, SpectrumConfig, SpectrumProcessor};
+use hyprgram_core::{profiles, SampleRing, SpectrumProcessor};
 use iced::widget::container;
 use iced::widget::shader::Shader;
 use iced::{Element, Length, Size, Subscription, Task};
@@ -53,7 +53,23 @@ impl App {
         if let Some(v) = args.gamma { spectrum.amplitude_gamma = v; }
         if let Some(v) = args.temporal_alpha { spectrum.temporal_alpha = v; }
         if let Some(v) = args.peak_decay { spectrum.peak_hold_decay = v; }
-        let colormap_name = args.colormap.as_deref().unwrap_or("viridis");
+        if let Some(ref v) = args.weighting {
+            spectrum.weighting = match v.to_lowercase().as_str() {
+                "none" => hyprgram_core::Weighting::None,
+                "a" => hyprgram_core::Weighting::A,
+                "c" => hyprgram_core::Weighting::C,
+                other => panic!("unknown weighting '{}'", other),
+            };
+        }
+        if let Some(ref v) = args.transform {
+            spectrum.transform = match v.to_lowercase().as_str() {
+                "stft" => hyprgram_core::Transform::Stft,
+                "cqt" => hyprgram_core::Transform::Cqt,
+                other => panic!("unknown transform '{}'", other),
+            };
+        }
+        if let Some(v) = args.cqt_bpo { spectrum.cqt_bins_per_octave = v; }
+        let _colormap_name = args.colormap.as_deref().unwrap_or("viridis");
         let img = profile.image.as_ref();
         let width = args.width.unwrap_or(img.map_or(800, |i| i.width));
         let height = args.height.unwrap_or(img.map_or(200, |i| i.height));
@@ -114,7 +130,7 @@ fn subscription(_app: &App) -> Subscription<Message> {
 }
 
 pub fn run(args: Args) -> anyhow::Result<()> {
-    let size = Size::new(args.width as f32, args.height as f32);
+    let size = Size::new(args.width.unwrap_or(800) as f32, args.height.unwrap_or(200) as f32);
     iced::application(move || App::bootstrap(args.clone()), update, view)
         .title("hyprgram")
         .window_size(size)

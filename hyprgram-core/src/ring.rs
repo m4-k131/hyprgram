@@ -65,3 +65,78 @@ impl SampleRing {
         c.occupied_len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_ring_is_empty() {
+        let ring = SampleRing::new(1024);
+        assert_eq!(ring.available(), 0);
+    }
+
+    #[test]
+    fn push_pop_roundtrip_mono() {
+        let ring = SampleRing::new(1024);
+        let input: Vec<f32> = (0..100).map(|i| i as f32).collect();
+        let n = ring.push_interleaved(&input, 1);
+        assert_eq!(n, 100);
+        assert_eq!(ring.available(), 100);
+        let mut output = vec![0.0f32; 200];
+        let m = ring.pop_into(&mut output);
+        assert_eq!(m, 100);
+        for i in 0..100 {
+            assert!((output[i] - i as f32).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn push_interleaved_stereo_downmixes() {
+        let ring = SampleRing::new(1024);
+        let input: Vec<f32> = vec![1.0, 3.0, 5.0, 7.0];
+        let n = ring.push_interleaved(&input, 2);
+        assert_eq!(n, 2);
+        let mut output = vec![0.0f32; 10];
+        let m = ring.pop_into(&mut output);
+        assert_eq!(m, 2);
+        assert!((output[0] - 2.0).abs() < 0.001);
+        assert!((output[1] - 6.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn push_interleaved_zero_channels() {
+        let ring = SampleRing::new(1024);
+        let n = ring.push_interleaved(&[1.0, 2.0, 3.0], 0);
+        assert_eq!(n, 0);
+        assert_eq!(ring.available(), 0);
+    }
+
+    #[test]
+    fn push_until_full() {
+        let ring = SampleRing::new(10);
+        let input: Vec<f32> = (0..20).map(|i| i as f32).collect();
+        let n = ring.push_interleaved(&input, 1);
+        assert_eq!(n, 10);
+        assert_eq!(ring.available(), 10);
+    }
+
+    #[test]
+    fn pop_into_empty_ring() {
+        let ring = SampleRing::new(1024);
+        let mut output = vec![0.0f32; 10];
+        let n = ring.pop_into(&mut output);
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn clone_shares_data() {
+        let ring1 = SampleRing::new(1024);
+        let ring2 = ring1.clone();
+        ring1.push_interleaved(&[1.0, 2.0, 3.0], 1);
+        assert_eq!(ring2.available(), 3);
+        let mut output = vec![0.0f32; 10];
+        let n = ring2.pop_into(&mut output);
+        assert_eq!(n, 3);
+    }
+}

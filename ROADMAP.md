@@ -83,7 +83,7 @@ This document lists **features and techniques** (not magic numbers) toward a **f
 1. **Phase 1 — Core spectrogram quality** ✅ *complete*
    Pluggable **window functions** (Hann, Hamming, Blackman, Blackman-Harris); **band aggregation** (nearest / triangular); **frequency-domain smoothing** (Gaussian kernel); **temporal smoothing** (EMA, peak hold); **amplitude pipeline** (dB floor/ceil, gamma); **colormap presets** (viridis, inferno, magma, plasma, turbo, grayscale, heat).
 
-2. **Phase 2 — Transform upgrades**
+2. **Phase 2 — Transform upgrades** ✅ *complete*
    **CQT** or **constant-Q filter bank** path; compare to STFT+log; optional **non-power-of-two** FFT for ms-based windows; **A/C-weighting** filters.
 
 3. **Phase 3 — Realtime integration** (Linux/Wayland)
