@@ -67,15 +67,19 @@ pub fn builtin_colormap(name: &str) -> Option<Colormap> {
         "grayscale" => Some(grayscale()),
         "heat" => Some(heat()),
         "gruvbox-dark" => Some(gruvbox_dark()),
+        "gruvbox-dark-5" => Some(gruvbox_dark_5()),
         "catppuccin-mocha" => Some(catppuccin_mocha()),
+        "catppuccin-mocha-5" => Some(catppuccin_mocha_5()),
         "nord" => Some(nord()),
+        "nord-5" => Some(nord_5()),
         "tokyo-night" => Some(tokyo_night()),
+        "tokyo-night-5" => Some(tokyo_night_5()),
         _ => None,
     }
 }
 
 pub fn builtin_colormap_names() -> Vec<&'static str> {
-    vec!["viridis", "inferno", "magma", "plasma", "turbo", "grayscale", "heat", "gruvbox-dark", "catppuccin-mocha", "nord", "tokyo-night"]
+    vec!["viridis", "inferno", "magma", "plasma", "turbo", "grayscale", "heat", "gruvbox-dark", "gruvbox-dark-5", "catppuccin-mocha", "catppuccin-mocha-5", "nord", "nord-5", "tokyo-night", "tokyo-night-5"]
 }
 
 pub fn default_colormap() -> Colormap {
@@ -207,6 +211,19 @@ fn gruvbox_dark() -> Colormap {
     }
 }
 
+fn gruvbox_dark_5() -> Colormap {
+    Colormap {
+        name: "gruvbox-dark-5".into(),
+        stops: vec![
+            (0.0, 0.114, 0.125, 0.129),
+            (0.25, 0.224, 0.180, 0.118),
+            (0.5, 0.459, 0.196, 0.078),
+            (0.75, 0.682, 0.455, 0.169),
+            (1.0, 0.878, 0.776, 0.569),
+        ],
+    }
+}
+
 fn catppuccin_mocha() -> Colormap {
     Colormap {
         name: "catppuccin-mocha".into(),
@@ -220,6 +237,19 @@ fn catppuccin_mocha() -> Colormap {
             (0.750, 0.976, 0.788, 0.380),
             (0.875, 0.980, 0.890, 0.486),
             (1.000, 0.906, 0.890, 0.765),
+        ],
+    }
+}
+
+fn catppuccin_mocha_5() -> Colormap {
+    Colormap {
+        name: "catppuccin-mocha-5".into(),
+        stops: vec![
+            (0.0, 0.118, 0.125, 0.141),
+            (0.25, 0.490, 0.227, 0.545),
+            (0.5, 0.878, 0.475, 0.565),
+            (0.75, 0.976, 0.788, 0.380),
+            (1.0, 0.906, 0.890, 0.765),
         ],
     }
 }
@@ -241,6 +271,19 @@ fn nord() -> Colormap {
     }
 }
 
+fn nord_5() -> Colormap {
+    Colormap {
+        name: "nord-5".into(),
+        stops: vec![
+            (0.0, 0.180, 0.204, 0.251),
+            (0.25, 0.369, 0.424, 0.502),
+            (0.5, 0.698, 0.667, 0.749),
+            (0.75, 0.878, 0.808, 0.859),
+            (1.0, 0.925, 0.910, 0.925),
+        ],
+    }
+}
+
 fn tokyo_night() -> Colormap {
     Colormap {
         name: "tokyo-night".into(),
@@ -254,6 +297,19 @@ fn tokyo_night() -> Colormap {
             (0.750, 0.816, 0.733, 0.851),
             (0.875, 0.898, 0.820, 0.890),
             (1.000, 0.757, 0.875, 0.980),
+        ],
+    }
+}
+
+fn tokyo_night_5() -> Colormap {
+    Colormap {
+        name: "tokyo-night-5".into(),
+        stops: vec![
+            (0.0, 0.102, 0.110, 0.180),
+            (0.25, 0.247, 0.286, 0.490),
+            (0.5, 0.545, 0.553, 0.753),
+            (0.75, 0.816, 0.733, 0.851),
+            (1.0, 0.757, 0.875, 0.980),
         ],
     }
 }
