@@ -30,6 +30,14 @@ pub struct Args {
     pub window_fn: Option<String>,
     #[arg(long = "band-agg", help = "Override: band aggregation (nearest, triangular)")]
     pub band_agg: Option<String>,
+    #[arg(long = "f-min", help = "Override: minimum frequency (Hz)")]
+    pub f_min: Option<f32>,
+    #[arg(long = "f-max", help = "Override: maximum frequency (Hz)")]
+    pub f_max: Option<f32>,
+    #[arg(long = "db-floor", help = "Override: dB floor (lower = more sensitive, try -90 to -60)")]
+    pub db_floor: Option<f32>,
+    #[arg(long = "db-ceil", help = "Override: dB ceiling (upper = less sensitive, try -20 to 0)")]
+    pub db_ceil: Option<f32>,
     #[arg(long = "smoothing", help = "Override: Gaussian frequency smoothing sigma (0=off, try 0.5-2.0)")]
     pub smoothing: Option<f32>,
     #[arg(long = "gamma", help = "Override: amplitude gamma (<1 brightens, >1 darkens)")]
@@ -63,7 +71,26 @@ pub struct Args {
 // - CPU: profile with perf; watch extra copies between PipeWire ring, DSP, and GPU upload.
 
 fn main() -> Result<()> {
+    // Set up panic hook for better error reporting
+    std::panic::set_hook(Box::new(|panic_info| {
+        let location = panic_info.location().unwrap_or_else(|| std::panic::Location::caller());
+        let msg = match panic_info.payload().downcast_ref::<&str>() {
+            Some(s) => *s,
+            None => match panic_info.payload().downcast_ref::<String>() {
+                Some(s) => &s[..],
+                None => "Unknown panic message",
+            },
+        };
+        eprintln!("!!! PANIC !!!");
+        eprintln!("Location: {}:{}:{}", location.file(), location.line(), location.column());
+        eprintln!("Message: {}", msg);
+        eprintln!("Backtrace:");
+        eprintln!("{}", std::backtrace::Backtrace::capture());
+    }));
+    
+    eprintln!("[MAIN] Starting hyprgram...");
     let args = Args::parse();
+    eprintln!("[MAIN] Parsed args: {:?}", args);
     #[cfg(not(target_os = "linux"))]
     {
         let _ = args;
@@ -71,6 +98,7 @@ fn main() -> Result<()> {
     }
     #[cfg(target_os = "linux")]
     {
+        eprintln!("[MAIN] Running Linux backend...");
         linux::run(args)
     }
 }

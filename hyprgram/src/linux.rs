@@ -1,7 +1,7 @@
 use crate::Args;
 use hyprgram::dev::{effective_spectrogram_history, SpectrogramDevConfig};
 use hyprgram::spectrogram::SpectrogramProgram;
-use hyprgram_core::{profiles, SampleRing, SpectrumProcessor};
+use hyprgram_core::{colormap, profiles, SampleRing, SpectrumProcessor};
 use iced::widget::container;
 use iced::widget::shader::Shader;
 use iced::{Element, Length, Size, Subscription, Task};
@@ -53,6 +53,10 @@ impl App {
         if let Some(v) = args.gamma { spectrum.amplitude_gamma = v; }
         if let Some(v) = args.temporal_alpha { spectrum.temporal_alpha = v; }
         if let Some(v) = args.peak_decay { spectrum.peak_hold_decay = v; }
+        if let Some(v) = args.f_min { spectrum.f_min_hz = v; }
+        if let Some(v) = args.f_max { spectrum.f_max_hz = v; }
+        if let Some(v) = args.db_floor { spectrum.db_floor = v; }
+        if let Some(v) = args.db_ceil { spectrum.db_ceil = v; }
         if let Some(ref v) = args.weighting {
             spectrum.weighting = match v.to_lowercase().as_str() {
                 "none" => hyprgram_core::Weighting::None,
@@ -69,8 +73,11 @@ impl App {
             };
         }
         if let Some(v) = args.cqt_bpo { spectrum.cqt_bins_per_octave = v; }
-        let _colormap_name = args.colormap.as_deref().unwrap_or("viridis");
         let img = profile.image.as_ref();
+        let colormap_name = args.colormap.as_deref().unwrap_or_else(|| img.map_or("viridis", |i| i.colormap.as_str()));
+        let colormap_lut = colormap::builtin_colormap(colormap_name)
+            .unwrap_or_else(|| panic!("unknown colormap '{}'. Available: {:?}", colormap_name, colormap::builtin_colormap_names()))
+            .build_lut(256);
         let width = args.width.unwrap_or(img.map_or(800, |i| i.width));
         let height = args.height.unwrap_or(img.map_or(200, |i| i.height));
         let rtl = if args.legacy_vertical_scroll { false } else { img.map_or(true, |i| i.scroll_right_to_left) };
@@ -106,6 +113,7 @@ impl App {
                 pending_spectra,
                 bins: spectrum.log_bins as u32,
                 history,
+                colormap_lut,
                 dev: SpectrogramDevConfig {
                     scroll_right_to_left: rtl,
                 },

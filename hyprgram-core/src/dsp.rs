@@ -118,9 +118,9 @@ impl Default for SpectrumConfig {
     fn default() -> Self {
         Self {
             window_size: DEFAULT_FFT_WINDOW_SAMPLES,
-            hop_size: DEFAULT_FFT_HOP_SAMPLES,
+            hop_size: 1024,
             sample_rate: 48000,
-            log_bins: 256,
+            log_bins: 512,
             f_min_hz: 20.0,
             f_max_hz: 20000.0,
             db_floor: -80.0,
@@ -151,6 +151,10 @@ pub struct SpectrumProcessor {
     pending: Vec<f32>,
     weighting_weights: Vec<f32>,
     cqt_weights: Vec<Vec<(usize, f32)>>,
+    // Automatic gain control
+    agc_peak: f32,
+    agc_alpha: f32,
+    agc_target: f32,
 }
 
 impl SpectrumProcessor {
@@ -182,6 +186,9 @@ impl SpectrumProcessor {
             pending: Vec::with_capacity(pending_cap),
             weighting_weights,
             cqt_weights,
+            agc_peak: 0.001,  // Start with very low peak
+            agc_alpha: 0.01,   // Slow adaptation
+            agc_target: -20.0, // Target peak level in dB
         })
     }
     pub fn set_sample_rate(&mut self, sr: u32) {
@@ -214,7 +221,7 @@ impl SpectrumProcessor {
             out_columns.push(col);
         }
     }
-    fn map_log_magnitude(&self, col: &mut [f32]) {
+    fn map_log_magnitude(&mut self, col: &mut [f32]) {
         let sr = self.cfg.sample_rate as f32;
         let nyq = 0.499 * sr;
         let f_max = self.cfg.f_max_hz.min(nyq).max(self.cfg.f_min_hz + 1.0);
@@ -250,7 +257,16 @@ impl SpectrumProcessor {
                     let im = self.spectrum[k].im;
                     let mag = (re * re + im * im).sqrt() / nfft as f32 * self.weighting_weights[k];
                     let db = 20.0 * (mag + 1e-12).log10();
-                    let u = ((db - self.cfg.db_floor) / (self.cfg.db_ceil - self.cfg.db_floor).max(1e-9)).clamp(0.0, 1.0);
+                    // Update AGC peak tracking
+                    self.agc_peak = self.agc_peak * (1.0 - self.agc_alpha) + mag.max(self.agc_peak) * self.agc_alpha;
+                    // Apply AGC normalization
+                    let agc_gain = if self.agc_peak > 1e-12 {
+                        10.0_f32.powf(self.agc_target / 20.0) / self.agc_peak
+                    } else {
+                        1.0
+                    };
+                    let normalized_db = db + 20.0 * agc_gain.log10();
+                    let u = ((normalized_db - self.cfg.db_floor) / (self.cfg.db_ceil - self.cfg.db_floor).max(1e-9)).clamp(0.0, 1.0);
                     col[i] = u;
                 }
             }
@@ -267,7 +283,16 @@ impl SpectrumProcessor {
                     }
                     let mag = if weight_sum > 0.0 { mag_sum / weight_sum } else { 0.0 };
                     let db = 20.0 * (mag + 1e-12).log10();
-                    let u = ((db - self.cfg.db_floor) / (self.cfg.db_ceil - self.cfg.db_floor).max(1e-9)).clamp(0.0, 1.0);
+                    // Update AGC peak tracking (use same AGC for both modes)
+                    self.agc_peak = self.agc_peak * (1.0 - self.agc_alpha) + mag.max(self.agc_peak) * self.agc_alpha;
+                    // Apply AGC normalization
+                    let agc_gain = if self.agc_peak > 1e-12 {
+                        10.0_f32.powf(self.agc_target / 20.0) / self.agc_peak
+                    } else {
+                        1.0
+                    };
+                    let normalized_db = db + 20.0 * agc_gain.log10();
+                    let u = ((normalized_db - self.cfg.db_floor) / (self.cfg.db_ceil - self.cfg.db_floor).max(1e-9)).clamp(0.0, 1.0);
                     col[i] = u;
                 }
             }
@@ -276,16 +301,24 @@ impl SpectrumProcessor {
             let orig = col.to_vec();
             let n = col.len() as isize;
             for i in 0..col.len() {
+                // Frequency-dependent smoothing: more for low freq, less for high freq
+                let freq_ratio = i as f32 / col.len().saturating_sub(1).max(1) as f32;
+                // Low frequencies (0.0) get full smoothing, high frequencies (1.0) get minimal
+                let smoothing_factor = 1.0 - freq_ratio * 0.7; // Scale from 1.0 to 0.3
+                
                 let mut sum = 0.0f32;
                 let mut wsum = 0.0f32;
                 for &(off, w) in &self.smoothing_kernel {
                     let j = i as isize + off;
                     if j >= 0 && j < n {
-                        sum += orig[j as usize] * w;
-                        wsum += w;
+                        let adjusted_weight = w * smoothing_factor;
+                        sum += orig[j as usize] * adjusted_weight;
+                        wsum += adjusted_weight;
                     }
                 }
-                col[i] = if wsum > 0.0 { sum / wsum } else { orig[i] };
+                // Mix original and smoothed based on frequency
+                let smoothed = if wsum > 0.0 { sum / wsum } else { orig[i] };
+                col[i] = orig[i] * (1.0 - smoothing_factor) + smoothed * smoothing_factor;
             }
         }
         let gamma = self.cfg.amplitude_gamma;

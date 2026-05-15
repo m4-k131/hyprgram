@@ -9,12 +9,8 @@ fn main() {
 use clap::Parser;
 #[cfg(target_os = "linux")]
 use hyprgram::dev::{effective_spectrogram_history, SpectrogramDevConfig};
-#[cfg(target_os = "linux")]
 use hyprgram::spectrogram::SpectrogramProgram;
-#[cfg(target_os = "linux")]
-use hyprgram_core::{
-    SpectrumConfig, SpectrumProcessor, DEFAULT_FFT_HOP_SAMPLES, DEFAULT_FFT_WINDOW_SAMPLES,
-};
+use hyprgram_core::{colormap, SpectrumConfig, SpectrumProcessor, DEFAULT_FFT_HOP_SAMPLES, DEFAULT_FFT_WINDOW_SAMPLES};
 #[cfg(target_os = "linux")]
 use iced::widget::container;
 #[cfg(target_os = "linux")]
@@ -97,6 +93,7 @@ impl Preview {
                 pending_spectra: Arc::new(Mutex::new(VecDeque::new())),
                 bins: args.log_bins as u32,
                 history,
+                colormap_lut: colormap::default_colormap().build_lut(256),
                 dev: SpectrogramDevConfig {
                     scroll_right_to_left: rtl,
                 },

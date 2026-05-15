@@ -83,7 +83,7 @@ pub fn render_spectrogram_png<P: AsRef<Path>>(
         for x in 0..width {
             let value = if config.scroll_right_to_left {
                 let col = sample_index(x, width, columns.len());
-                let bin = sample_index(height - 1 - y, height, bins);
+                let bin = sample_index(y, height, bins);  // Flip: low freq at bottom
                 sample_column(columns, col, bin)
             } else {
                 let col = sample_index(y, height, columns.len());
