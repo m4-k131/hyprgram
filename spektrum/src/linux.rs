@@ -10,8 +10,22 @@ use iced::{Element, Event, Length, Size, Subscription, Task};
 use iced::keyboard;
 use iced::mouse;
 use std::collections::{HashMap, VecDeque};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
+
+static IPC_RX: OnceLock<Arc<Mutex<mpsc::Receiver<SettingsMessage>>>> = OnceLock::new();
+
+fn ipc_subscription() -> impl iced::futures::Stream<Item = Message> {
+    let rx = IPC_RX.get().unwrap().clone();
+    iced::futures::stream::unfold(rx, move |rx| async move {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let mut msgs = Vec::new();
+        while let Ok(msg) = rx.lock().unwrap().try_recv() {
+            msgs.push(msg);
+        }
+        Some((Message::Ipc(msgs), rx))
+    })
+}
 
 const MAX_SOURCES: usize = 4;
 
@@ -38,6 +52,8 @@ pub struct App {
     source_targets: HashMap<String, String>,
     _pw_handles: Vec<std::thread::JoinHandle<()>>,
     ipc_rx: Arc<Mutex<mpsc::Receiver<SettingsMessage>>>,
+    config_dirty: bool,
+    last_session_save: Instant,
 }
 
 impl App {
@@ -163,6 +179,7 @@ impl App {
         settings.source_labels = sources.iter().map(|s| s.label.clone()).collect();
 
         let ipc_rx = Arc::new(Mutex::new(ipc::spawn_ipc_server()));
+        let _ = IPC_RX.set(ipc_rx.clone());
 
         Self {
             sources,
@@ -179,6 +196,8 @@ impl App {
             source_targets,
             _pw_handles: pw_handles,
             ipc_rx,
+            config_dirty: false,
+            last_session_save: Instant::now(),
         }
     }
 }
@@ -269,6 +288,9 @@ fn initial_profile(args: &Args) -> profiles::Profile {
             eprintln!("{}. Available: {:?}; using default", e, profiles::list_profile_names());
             profiles::builtin_profile("high_quality").unwrap()
         })
+    } else if let Some(session) = profiles::load_session_config() {
+        eprintln!("[session] restored config from {}", profiles::session_config_path().display());
+        session
     } else {
         profiles::builtin_profile("high_quality").unwrap()
     }
@@ -720,7 +742,17 @@ fn sync_active_source_settings(app: &mut App) {
 
 fn update(app: &mut App, message: Message) -> Task<Message> {
     match message {
-        Message::Tick => Task::none(),
+        Message::Tick => {
+            if app.config_dirty && app.last_session_save.elapsed() > Duration::from_secs(2) {
+                let profile = current_profile(app);
+                if let Err(e) = profiles::save_session_config(&profile) {
+                    eprintln!("[session] failed to save config: {e}");
+                }
+                app.config_dirty = false;
+                app.last_session_save = Instant::now();
+            }
+            Task::none()
+        }
         Message::WindowEvent(Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))) => {
             let now = Instant::now();
             if let Some(prev) = app.last_click {
@@ -1036,6 +1068,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     app.settings.shared_bg = v;
                 }
             }
+            app.config_dirty = true;
             Task::none()
         }
         Message::Ipc(msgs) => {
@@ -1085,17 +1118,11 @@ fn view(app: &App) -> Element<'_, Message> {
 }
 
 fn subscription(app: &App) -> Subscription<Message> {
-    let rx = app.ipc_rx.clone();
+    let _ = app.ipc_rx.clone();
     Subscription::batch([
         iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick),
         iced::event::listen().map(Message::WindowEvent),
-        iced::time::every(Duration::from_millis(10)).map(move |_| {
-            let mut msgs = Vec::new();
-            while let Ok(msg) = rx.lock().unwrap().try_recv() {
-                msgs.push(msg);
-            }
-            Message::Ipc(msgs)
-        }),
+        Subscription::run(ipc_subscription),
     ])
 }
 

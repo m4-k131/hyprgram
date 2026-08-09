@@ -382,6 +382,29 @@ pub fn delete_user_dsp_settings(name: &str) -> Result<(), CoreError> {
         .map_err(|e| CoreError::Dsp(format!("failed to delete DSP settings: {e}")))
 }
 
+pub fn session_config_path() -> std::path::PathBuf {
+    config_dir().join("vividspektrum/session.toml")
+}
+
+pub fn save_session_config(profile: &Profile) -> Result<(), CoreError> {
+    let path = session_config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| CoreError::Dsp(format!("failed to create config directory: {e}")))?;
+    }
+    let text = toml::to_string_pretty(profile).map_err(|e| CoreError::Dsp(format!("failed to serialize session config: {e}")))?;
+    let temp = path.with_extension("toml.tmp");
+    std::fs::write(&temp, text).map_err(|e| CoreError::Dsp(format!("failed to write session config: {e}")))?;
+    std::fs::rename(temp, &path).map_err(|e| CoreError::Dsp(format!("failed to save session config: {e}")))
+}
+
+pub fn load_session_config() -> Option<Profile> {
+    let path = session_config_path();
+    if !path.exists() {
+        return None;
+    }
+    load_profile(&path).ok()
+}
+
 fn config_dir() -> std::path::PathBuf {
     std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config")))

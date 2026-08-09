@@ -3609,6 +3609,7 @@ dependencies = [
  "iced_layershell",
  "image",
  "spektrum-core",
+ "tokio",
  "winres",
 ]
 
