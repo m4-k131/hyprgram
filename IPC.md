@@ -126,6 +126,20 @@ echo "colormap-save my-custom 0.0,0.0,0.0,0.0 1.0,1.0,1.0,1.0" | socat - /tmp/vi
 - **`colormap-save`** — saves the colormap as a TOML file in the user config directory (`~/.config/vividspektrum/colormaps/<name>.toml`), then applies it. It will appear in `list-colormaps` and the UI dropdown permanently.
 - Stops are automatically sorted by position. At least 2 stops are required.
 
+### Color Adjustment
+
+Optional `light-contrast` and `chroma-scale` keywords can be appended to `colormap-stops` and `colormap-save`. These apply a one-time transform to the stops in HSL space before applying/saving. They are distinct from the GPU `contrast` and `saturation` slider commands — those operate at render time, while these modify the colormap stops themselves:
+
+- **`light-contrast <factor>`** — lightness contrast around 0.5. Values >1 darken darks and brighten brights (e.g. `1.5` pushes low-intensity colors darker and high-intensity colors brighter). `1.0` = no change.
+- **`chroma-scale <factor>`** — scales chroma. Values >1 increase colorfulness, <1 desaturate. `1.0` = no change. Useful for fine-tuning how vivid the colormap appears on the spectrogram.
+
+Hue is always preserved — only lightness and chroma are adjusted.
+
+```bash
+# Push a colormap with increased lightness contrast (darker darks, brighter brights)
+echo "colormap-save my-custom 0.0,0.05,0.0,0.1 0.5,0.5,0.2,0.5 1.0,1.0,0.9,0.8 light-contrast 1.4 chroma-scale 1.1" | socat - /tmp/vividspektrum.sock
+```
+
 ## Examples
 
 ### Python

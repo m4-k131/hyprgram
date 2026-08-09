@@ -84,8 +84,8 @@ fn handle_query(line: &str) -> Option<String> {
 const HELP_TEXT: &str = "\
 Commands:\n\
   colormap <name>\n\
-  colormap-stops <name> <pos,r,g,b> <pos,r,g,b> ...\n\
-  colormap-save <name> <pos,r,g,b> <pos,r,g,b> ...\n\
+  colormap-stops <name> <pos,r,g,b> <pos,r,g,b> ... [light-contrast <f>] [chroma-scale <f>]\n\
+  colormap-save <name> <pos,r,g,b> <pos,r,g,b> ... [light-contrast <f>] [chroma-scale <f>]\n\
   contrast <0.0-3.0>\n\
   saturation <0.0-3.0>\n\
   opacity <0.0-1.0>\n\
@@ -238,19 +238,84 @@ fn parse_slider(name: &str) -> Result<DspSlider, String> {
 
 fn parse_stops(s: &str) -> Result<Vec<(f32, f32, f32, f32)>, String> {
     let mut stops = Vec::new();
-    for token in s.split_whitespace() {
-        let parts: Vec<&str> = token.split(',').collect();
-        if parts.len() != 4 {
-            return Err(format!("expected pos,r,g,b — got '{token}'"));
+    let mut contrast: f32 = 1.0;
+    let mut saturation: f32 = 1.0;
+
+    let mut tokens = s.split_whitespace().peekable();
+    while let Some(token) = tokens.next() {
+        match token.to_lowercase().as_str() {
+            "light-contrast" => {
+                let v = tokens.next().ok_or("expected value after 'light-contrast'")?;
+                contrast = v.parse().map_err(|_| format!("bad light-contrast value '{v}'"))?;
+            }
+            "chroma-scale" => {
+                let v = tokens.next().ok_or("expected value after 'chroma-scale'")?;
+                saturation = v.parse().map_err(|_| format!("bad chroma-scale value '{v}'"))?;
+            }
+            _ => {
+                let parts: Vec<&str> = token.split(',').collect();
+                if parts.len() != 4 {
+                    return Err(format!("expected pos,r,g,b — got '{token}'"));
+                }
+                let pos: f32 = parts[0].trim().parse().map_err(|_| format!("bad position in '{token}'"))?;
+                let r: f32 = parts[1].trim().parse().map_err(|_| format!("bad red in '{token}'"))?;
+                let g: f32 = parts[2].trim().parse().map_err(|_| format!("bad green in '{token}'"))?;
+                let b: f32 = parts[3].trim().parse().map_err(|_| format!("bad blue in '{token}'"))?;
+                stops.push((pos, r, g, b));
+            }
         }
-        let pos: f32 = parts[0].trim().parse().map_err(|_| format!("bad position in '{token}'"))?;
-        let r: f32 = parts[1].trim().parse().map_err(|_| format!("bad red in '{token}'"))?;
-        let g: f32 = parts[2].trim().parse().map_err(|_| format!("bad green in '{token}'"))?;
-        let b: f32 = parts[3].trim().parse().map_err(|_| format!("bad blue in '{token}'"))?;
-        stops.push((pos, r, g, b));
     }
     if stops.len() < 2 {
         return Err("need at least 2 stops".to_string());
     }
+    if contrast != 1.0 || saturation != 1.0 {
+        stops = adjust_stops(&stops, contrast, saturation);
+    }
     Ok(stops)
+}
+
+fn adjust_stops(stops: &[(f32, f32, f32, f32)], contrast: f32, saturation: f32) -> Vec<(f32, f32, f32, f32)> {
+    stops.iter().map(|&(pos, r, g, b)| {
+        let (h, s, l) = rgb_to_hsl(r, g, b);
+        let l_new = ((l - 0.5) * contrast + 0.5).clamp(0.0, 1.0);
+        let s_new = (s * saturation).clamp(0.0, 1.0);
+        let (r, g, b) = hsl_to_rgb(h, s_new, l_new);
+        (pos, r, g, b)
+    }).collect()
+}
+
+fn rgb_to_hsl(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let l = (max + min) * 0.5;
+    if (max - min).abs() < 1e-9 {
+        return (0.0, 0.0, l);
+    }
+    let d = max - min;
+    let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+    let h = if max == r {
+        ((g - b) / d) + if g < b { 4.0 } else { 0.0 }
+    } else if max == g {
+        (b - r) / d + 2.0
+    } else {
+        (r - g) / d + 4.0
+    };
+    (h * 60.0, s, l)
+}
+
+fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
+    if s.abs() < 1e-9 {
+        return (l, l, l);
+    }
+    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    let p = 2.0 * l - q;
+    let h_norm = if h < 0.0 { h + 360.0 } else { h } / 360.0;
+    let hue_to_rgb = |t: f32| {
+        let t = t.clamp(0.0, 1.0);
+        if t < 1.0 / 6.0 { p + (q - p) * 6.0 * t }
+        else if t < 0.5 { q }
+        else if t < 2.0 / 3.0 { p + (q - p) * (2.0 / 3.0 - t) * 6.0 }
+        else { p }
+    };
+    (hue_to_rgb(h_norm + 1.0 / 3.0), hue_to_rgb(h_norm), hue_to_rgb(h_norm - 1.0 / 3.0))
 }
