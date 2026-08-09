@@ -7,3 +7,5 @@ pub mod settings;
 pub mod source;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 pub mod spectrogram;
+#[cfg(target_os = "linux")]
+pub mod ipc;

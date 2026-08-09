@@ -1097,10 +1097,12 @@ impl shader::Primitive for MultiSpectrogramPrimitive {
         }
 
         if pipeline.sources.len() > 1 {
-            let shared_scroll = pipeline.sources.iter()
-                .map(|gpu| gpu.scroll)
-                .fold(0.0f32, f32::max);
+            let max_write_row = pipeline.sources.iter()
+                .map(|gpu| gpu.write_row)
+                .fold(0u32, u32::max);
             for gpu in &mut pipeline.sources {
+                let h = gpu.texture.size().height.max(1);
+                let shared_scroll = ((max_write_row % h) as f32 + 1.0) / (h as f32);
                 gpu.scroll = shared_scroll;
                 let scroll_bytes = bytemuck::bytes_of(&shared_scroll);
                 queue.write_buffer(&gpu.uniform, 0, scroll_bytes);

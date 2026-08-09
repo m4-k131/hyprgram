@@ -1,5 +1,6 @@
 use crate::Args;
 use spektrum::dev::{effective_spectrogram_history, SpectrogramDevConfig};
+use spektrum::ipc;
 use spektrum::settings::{DspSlider, SettingsMessage, SettingsState};
 use spektrum::source::{spawn_dsp_thread, DspCommand, SourceSlot};
 use spektrum_core::{overlay, profiles, resolve_colormap, sample_ring_pair, spectrum_output_bins, SpectrumConfig};
@@ -19,6 +20,7 @@ enum Message {
     Tick,
     WindowEvent(Event),
     Settings(SettingsMessage),
+    Ipc(Vec<SettingsMessage>),
 }
 
 pub struct App {
@@ -35,6 +37,7 @@ pub struct App {
     source_list: Vec<String>,
     source_targets: HashMap<String, String>,
     _pw_handles: Vec<std::thread::JoinHandle<()>>,
+    ipc_rx: Arc<Mutex<mpsc::Receiver<SettingsMessage>>>,
 }
 
 impl App {
@@ -159,6 +162,8 @@ impl App {
         );
         settings.source_labels = sources.iter().map(|s| s.label.clone()).collect();
 
+        let ipc_rx = Arc::new(Mutex::new(ipc::spawn_ipc_server()));
+
         Self {
             sources,
             settings,
@@ -173,6 +178,7 @@ impl App {
             source_list,
             source_targets,
             _pw_handles: pw_handles,
+            ipc_rx,
         }
     }
 }
@@ -603,6 +609,18 @@ fn apply_colormap(app: &mut App, name: &str) {
     }
 }
 
+fn apply_colormap_stops(app: &mut App, name: &str, stops: &[(f32, f32, f32, f32)]) {
+    let mut sorted = stops.to_vec();
+    sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let colormap = spektrum_core::Colormap::new(name, sorted);
+    let lut = Arc::new(colormap.build_lut_rgba(256));
+    let active = app.settings.active_source;
+    if let Some(slot) = app.sources.get_mut(active) {
+        slot.prog.colormap_lut = lut;
+        slot.colormap_name = name.to_string();
+    }
+}
+
 fn apply_edited_colormap(app: &mut App) {
     if app.settings.colormap_stops.len() < 2 {
         return;
@@ -773,6 +791,29 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     app.settings.opacity = v;
                 }
                 SettingsMessage::SetColormap(name) => apply_colormap(app, &name),
+                SettingsMessage::SetColormapStops(name, stops) => {
+                    if stops.len() < 2 {
+                        return Task::none();
+                    }
+                    app.settings.colormap = name.clone();
+                    app.settings.colormap_stops = stops.clone();
+                    apply_colormap_stops(app, &name, &stops);
+                }
+                SettingsMessage::SaveColormapStops(name, stops) => {
+                    if stops.len() < 2 {
+                        return Task::none();
+                    }
+                    let colormap = spektrum_core::Colormap::new(&name, stops.clone());
+                    match spektrum_core::colormap::save_user_colormap(&name, &colormap) {
+                        Ok(()) => {
+                            app.settings.colormap = name.clone();
+                            app.settings.colormap_stops = stops.clone();
+                            apply_colormap_stops(app, &name, &stops);
+                            refresh_libraries(app);
+                        }
+                        Err(e) => eprintln!("[ipc] failed to save colormap: {e}"),
+                    }
+                }
                 SettingsMessage::SetProfile(name) => apply_profile(app, &name),
                 SettingsMessage::SetDspSettings(name) => apply_dsp_settings(app, &name),
                 SettingsMessage::SetOverlay(name) => apply_overlay(app, &name),
@@ -997,6 +1038,12 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+        Message::Ipc(msgs) => {
+            for msg in msgs {
+                let _ = update(app, Message::Settings(msg));
+            }
+            Task::none()
+        }
     }
 }
 
@@ -1037,10 +1084,18 @@ fn view(app: &App) -> Element<'_, Message> {
     stack![spectrogram, panel].into()
 }
 
-fn subscription(_app: &App) -> Subscription<Message> {
+fn subscription(app: &App) -> Subscription<Message> {
+    let rx = app.ipc_rx.clone();
     Subscription::batch([
         iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick),
         iced::event::listen().map(Message::WindowEvent),
+        iced::time::every(Duration::from_millis(10)).map(move |_| {
+            let mut msgs = Vec::new();
+            while let Ok(msg) = rx.lock().unwrap().try_recv() {
+                msgs.push(msg);
+            }
+            Message::Ipc(msgs)
+        }),
     ])
 }
 

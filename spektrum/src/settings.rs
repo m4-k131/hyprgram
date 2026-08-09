@@ -161,6 +161,8 @@ pub enum SettingsMessage {
     SetSaturation(f32),
     SetOpacity(f32),
     SetColormap(String),
+    SetColormapStops(String, Vec<(f32, f32, f32, f32)>),
+    SaveColormapStops(String, Vec<(f32, f32, f32, f32)>),
     SetProfile(String),
     SetDspSettings(String),
     SetOverlay(String),

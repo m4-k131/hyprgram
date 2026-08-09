@@ -593,6 +593,44 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     app.settings.opacity = value;
                 }
                 SettingsMessage::SetColormap(name) => apply_colormap(app, &name),
+                SettingsMessage::SetColormapStops(name, stops) => {
+                    if stops.len() < 2 {
+                        return Task::none();
+                    }
+                    app.settings.colormap = name.clone();
+                    app.settings.colormap_stops = stops.clone();
+                    let mut sorted = stops.clone();
+                    sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
+                    let colormap = spektrum_core::Colormap::new(&name, sorted);
+                    let lut = Arc::new(colormap.build_lut_rgba(256));
+                    let active = app.settings.active_source;
+                    if let Some(slot) = app.sources.get_mut(active) {
+                        slot.prog.colormap_lut = lut;
+                        slot.colormap_name = name;
+                    }
+                }
+                SettingsMessage::SaveColormapStops(name, stops) => {
+                    if stops.len() < 2 {
+                        return Task::none();
+                    }
+                    let colormap = spektrum_core::Colormap::new(&name, stops.clone());
+                    match spektrum_core::colormap::save_user_colormap(&name, &colormap) {
+                        Ok(()) => {
+                            app.settings.colormap = name.clone();
+                            app.settings.colormap_stops = stops.clone();
+                            let mut sorted = stops.clone();
+                            sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
+                            let lut = Arc::new(spektrum_core::Colormap::new(&name, sorted).build_lut_rgba(256));
+                            let active = app.settings.active_source;
+                            if let Some(slot) = app.sources.get_mut(active) {
+                                slot.prog.colormap_lut = lut;
+                                slot.colormap_name = name;
+                            }
+                            refresh_libraries(app);
+                        }
+                        Err(e) => eprintln!("[ipc] failed to save colormap: {e}"),
+                    }
+                }
                 SettingsMessage::SetProfile(name) => apply_profile(app, &name),
                 SettingsMessage::SetDspSettings(name) => apply_dsp_settings(app, &name),
                 SettingsMessage::SetOverlay(name) => apply_overlay(app, &name),
