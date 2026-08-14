@@ -406,6 +406,7 @@ fn apply_profile(app: &mut App, name: &str) {
         app.settings.contrast = first.contrast;
         app.settings.saturation = first.saturation;
         app.settings.opacity = first.opacity;
+        app.settings.amplitude_gamma = first.amplitude_gamma;
         app.settings.colormap = first.colormap.clone();
     } else {
         while app.sources.len() > 1 {
@@ -508,7 +509,7 @@ fn apply_advanced(app: &mut App, field: DspSlider) {
         return;
     }
     if field == DspSlider::Gamma {
-        let gamma = app.settings.advanced.amplitude_gamma;
+        let gamma = app.settings.amplitude_gamma;
         let active = app.settings.active_source;
         if let Some(slot) = app.sources.get_mut(active) {
             slot.amplitude_gamma = gamma;
@@ -552,7 +553,7 @@ fn sync_active_source_settings(app: &mut App) {
         app.settings.saturation = slot.prog.saturation;
         app.settings.opacity = slot.opacity;
         app.settings.colormap = slot.colormap_name.clone();
-        app.settings.advanced.amplitude_gamma = slot.amplitude_gamma;
+        app.settings.amplitude_gamma = slot.amplitude_gamma;
         app.settings.source = slot.target.clone();
     }
 }
@@ -617,6 +618,16 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         slot.update_opacity(value);
                     }
                     app.settings.opacity = value;
+                }
+                SettingsMessage::SetAmplitudeGamma(v) => {
+                    let active = app.settings.active_source;
+                    if let Some(slot) = app.sources.get_mut(active) {
+                        slot.amplitude_gamma = v;
+                        let mut cfg = app.spectrum.clone();
+                        cfg.amplitude_gamma = v;
+                        slot.update_runtime(&cfg);
+                    }
+                    app.settings.amplitude_gamma = v;
                 }
                 SettingsMessage::SetColormap(name) => apply_colormap(app, &name),
                 SettingsMessage::SetColormapStops(name, stops) => {

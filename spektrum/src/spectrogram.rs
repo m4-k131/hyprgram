@@ -89,7 +89,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             overlay_alpha = max(overlay_alpha, 1.0 - dist / u.overlay_thickness);
         }
     }
-    if (u.additive_blend == 1u) {
+    if (u.additive_blend == 1u && u.is_first != 1u) {
         let signal_alpha = smoothstep(0.0, 0.03, mag) * u.opacity;
         if (overlay_alpha > 0.0) {
             c = mix(c, u.overlay_color.rgb, overlay_alpha * u.overlay_color.a);

@@ -160,6 +160,7 @@ pub enum SettingsMessage {
     SetContrast(f32),
     SetSaturation(f32),
     SetOpacity(f32),
+    SetAmplitudeGamma(f32),
     SetColormap(String),
     SetColormapStops(String, Vec<(f32, f32, f32, f32)>),
     SaveColormapStops(String, Vec<(f32, f32, f32, f32)>),
@@ -199,6 +200,7 @@ pub struct SettingsState {
     pub contrast: f32,
     pub saturation: f32,
     pub opacity: f32,
+    pub amplitude_gamma: f32,
     pub colormap: String,
     pub profile: String,
     pub dsp_settings: String,
@@ -236,6 +238,7 @@ impl SettingsState {
             contrast,
             saturation,
             opacity: 1.0,
+            amplitude_gamma: spectrum.amplitude_gamma,
             colormap: colormap.into(),
             profile: profile.into(),
             dsp_settings: dsp_settings.into(),
@@ -266,6 +269,7 @@ impl SettingsState {
 
     pub fn from_spectrum(&mut self, spectrum: &SpectrumConfig, history: f32) {
         self.advanced = spectrum.clone();
+        self.amplitude_gamma = spectrum.amplitude_gamma;
         self.history = history;
     }
 
@@ -279,7 +283,7 @@ impl SettingsState {
             DspSlider::DbFloor => self.advanced.db_floor,
             DspSlider::DbCeil => self.advanced.db_ceil,
             DspSlider::Smoothing => self.advanced.freq_smoothing_sigma,
-            DspSlider::Gamma => self.advanced.amplitude_gamma,
+            DspSlider::Gamma => self.amplitude_gamma,
             DspSlider::TemporalAlpha => self.advanced.temporal_alpha,
             DspSlider::PeakDecay => self.advanced.peak_hold_decay,
             DspSlider::CqtBins => self.advanced.cqt_bins_per_octave as f32,
@@ -298,7 +302,10 @@ impl SettingsState {
             DspSlider::DbFloor => self.advanced.db_floor = v.min(self.advanced.db_ceil - 1.0),
             DspSlider::DbCeil => self.advanced.db_ceil = v.max(self.advanced.db_floor + 1.0),
             DspSlider::Smoothing => self.advanced.freq_smoothing_sigma = v.max(0.0),
-            DspSlider::Gamma => self.advanced.amplitude_gamma = v.max(0.0),
+            DspSlider::Gamma => {
+                self.advanced.amplitude_gamma = v.max(0.0);
+                self.amplitude_gamma = v.max(0.0);
+            }
             DspSlider::TemporalAlpha => self.advanced.temporal_alpha = v.clamp(0.0, 1.0),
             DspSlider::PeakDecay => self.advanced.peak_hold_decay = v.clamp(0.0, 0.999),
             DspSlider::CqtBins => self.advanced.cqt_bins_per_octave = v.round() as u32,
@@ -377,6 +384,13 @@ impl SettingsState {
             ]
             .align_y(Alignment::Center),
             slider(0.0f32..=1.0f32, self.opacity, SettingsMessage::SetOpacity).step(0.05_f32),
+            row![
+                text(format!("Amplitude gamma {:.2}", self.amplitude_gamma)).size(12),
+                Space::new().width(Length::Fill),
+                info_icon("Per-source amplitude power curve. <1 brightens quiet parts, >1 darkens them."),
+            ]
+            .align_y(Alignment::Center),
+            slider(0.0f32..=2.0f32, self.amplitude_gamma, SettingsMessage::SetAmplitudeGamma).step(0.05_f32),
             label_row("Audio source", "PipeWire/PulseAudio capture source for this source slot."),
             pick_list(sources, Some(self.source.clone()), SettingsMessage::SetSource)
                 .text_size(11)
@@ -438,7 +452,6 @@ impl SettingsState {
             self.slider_row(DspSlider::DbFloor),
             self.slider_row(DspSlider::DbCeil),
             self.slider_row(DspSlider::Smoothing),
-            self.slider_row(DspSlider::Gamma),
             self.slider_row(DspSlider::TemporalAlpha),
             self.slider_row(DspSlider::PeakDecay),
             if self.advanced.transform == Transform::Stft {
