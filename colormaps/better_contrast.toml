@@ -1,0 +1,79 @@
+name = "better_contrast"
+
+[[stops]]
+position = 0.000
+r = 0.000
+g = 0.000
+b = 0.005
+
+[[stops]]
+position = 0.100
+r = 0.080
+g = 0.020
+b = 0.120
+
+[[stops]]
+position = 0.200
+r = 0.220
+g = 0.050
+b = 0.180
+
+[[stops]]
+position = 0.300
+r = 0.420
+g = 0.080
+b = 0.150
+
+[[stops]]
+position = 0.400
+r = 0.620
+g = 0.120
+b = 0.080
+
+[[stops]]
+position = 0.500
+r = 0.780
+g = 0.220
+b = 0.030
+
+[[stops]]
+position = 0.600
+r = 0.900
+g = 0.380
+b = 0.050
+
+[[stops]]
+position = 0.700
+r = 0.960
+g = 0.560
+b = 0.120
+
+[[stops]]
+position = 0.800
+r = 0.980
+g = 0.720
+b = 0.220
+
+[[stops]]
+position = 0.880
+r = 0.990
+g = 0.860
+b = 0.450
+
+[[stops]]
+position = 0.940
+r = 0.995
+g = 0.940
+b = 0.680
+
+[[stops]]
+position = 0.975
+r = 0.998
+g = 0.980
+b = 0.850
+
+[[stops]]
+position = 1.000
+r = 1.000
+g = 1.000
+b = 1.000

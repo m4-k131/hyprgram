@@ -98,6 +98,7 @@ Commands:\n\
   band-agg <nearest|triangular>\n\
   centered <true|false>\n\
   shared-bg <true|false>\n\
+  additive-blend <true|false>\n\
   set <param> <value>\n\
   toggle-menu\n\
   close-menu\n\
@@ -188,6 +189,10 @@ fn parse_command(line: &str) -> Result<Vec<SettingsMessage>, String> {
         "shared-bg" => {
             let b = parse_bool(rest)?;
             Ok(vec![SettingsMessage::SetSharedBg(b)])
+        }
+        "additive-blend" => {
+            let b = parse_bool(rest)?;
+            Ok(vec![SettingsMessage::SetAdditiveBlend(b)])
         }
         "set" => {
             let (param, value) = rest

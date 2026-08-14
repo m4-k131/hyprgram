@@ -22,6 +22,7 @@ pub struct SourceSlot {
     pub opacity: f32,
     pub colormap_name: String,
     pub capture_name: String,
+    pub amplitude_gamma: f32,
 }
 
 impl SourceSlot {
@@ -63,6 +64,10 @@ impl SourceSlot {
     pub fn update_opacity(&mut self, v: f32) {
         self.opacity = v;
         self.prog.opacity = v;
+    }
+
+    pub fn update_gamma(&mut self, v: f32) {
+        self.amplitude_gamma = v;
     }
 }
 

@@ -12,6 +12,8 @@ pub struct Profile {
     pub history: Option<u32>,
     #[serde(default)]
     pub sources: Vec<SourceConfig>,
+    #[serde(default)]
+    pub additive_blend: bool,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -22,6 +24,8 @@ pub struct SourceConfig {
     pub contrast: f32,
     pub saturation: f32,
     pub opacity: f32,
+    #[serde(default = "default_source_gamma")]
+    pub amplitude_gamma: f32,
 }
 
 impl Default for SourceConfig {
@@ -32,6 +36,7 @@ impl Default for SourceConfig {
             contrast: 1.0,
             saturation: 1.0,
             opacity: 1.0,
+            amplitude_gamma: 0.5,
         }
     }
 }
@@ -75,6 +80,7 @@ pub struct ProfileImage {
 fn default_width() -> u32 { 800 }
 fn default_height() -> u32 { 800 }
 fn default_scroll() -> bool { true }
+fn default_source_gamma() -> f32 { 0.5 }
 
 impl Profile {
     pub fn to_image_config(&self) -> SpectrogramImageConfig {
@@ -112,6 +118,7 @@ pub fn builtin_profile(name: &str) -> Option<Profile> {
             image: None,
             history: None,
             sources: Vec::new(),
+            additive_blend: false,
         }),
         "high_quality" => Some(Profile {
             dsp: personal_dsp_settings(),
@@ -129,6 +136,7 @@ pub fn builtin_profile(name: &str) -> Option<Profile> {
             }),
             history: None,
             sources: Vec::new(),
+            additive_blend: false,
         }),
         "singing_practice" => Some(Profile {
             dsp: {
@@ -156,6 +164,7 @@ pub fn builtin_profile(name: &str) -> Option<Profile> {
                     contrast: 2.05,
                     saturation: 1.1,
                     opacity: 1.0,
+                    amplitude_gamma: 0.5,
                 },
                 SourceConfig {
                     source: None,
@@ -163,8 +172,10 @@ pub fn builtin_profile(name: &str) -> Option<Profile> {
                     contrast: 2.35,
                     saturation: 1.05,
                     opacity: 0.55,
+                    amplitude_gamma: 0.5,
                 },
             ],
+            additive_blend: false,
         }),
         _ => None,
     }

@@ -104,6 +104,7 @@ impl App {
             contrast,
             saturation,
             1.0,
+            spectrum.amplitude_gamma,
             history,
             dev,
             debug_profile,
@@ -145,6 +146,7 @@ impl App {
                 1.0,
                 1.0,
                 0.5,
+                spectrum.amplitude_gamma,
                 history,
                 dev,
                 debug_profile,
@@ -210,6 +212,7 @@ fn create_source_slot(
     contrast: f32,
     saturation: f32,
     opacity: f32,
+    amplitude_gamma: f32,
     history: u32,
     dev: SpectrogramDevConfig,
     debug_profile: bool,
@@ -272,6 +275,7 @@ fn create_source_slot(
         opacity,
         colormap_name: colormap_name.to_string(),
         capture_name,
+        amplitude_gamma,
     };
 
     (slot, pw_handle)
@@ -441,6 +445,7 @@ fn apply_profile(app: &mut App, name: &str) {
                 sc.contrast,
                 sc.saturation,
                 sc.opacity,
+                sc.amplitude_gamma,
                 history,
                 dev,
                 debug_profile,
@@ -488,7 +493,9 @@ fn apply_profile(app: &mut App, name: &str) {
         });
 
         for slot in &app.sources {
-            slot.restart_dsp(&spectrum, history);
+            let mut cfg = spectrum.clone();
+            cfg.amplitude_gamma = slot.amplitude_gamma;
+            slot.restart_dsp(&cfg, history);
         }
         for slot in app.sources.iter_mut() {
             slot.prog.bins = spectrum_output_bins(&spectrum) as u32;
@@ -517,6 +524,7 @@ fn apply_profile(app: &mut App, name: &str) {
     app.spectrum = spectrum;
     app.settings.profile = name.to_string();
     app.settings.dsp_settings = "custom".to_string();
+    app.settings.additive_blend = profile.additive_blend;
     app.settings.from_spectrum(&app.spectrum, history as f32);
     let overlay_name = app.args.overlay.clone().unwrap_or_else(|| profile.colors.overlay.clone());
     apply_overlay(app, &overlay_name);
@@ -574,6 +582,7 @@ fn current_profile(app: &App) -> profiles::Profile {
             contrast: s.prog.contrast,
             saturation: s.prog.saturation,
             opacity: s.prog.opacity,
+            amplitude_gamma: s.amplitude_gamma,
         }).collect()
     } else {
         Vec::new()
@@ -596,6 +605,7 @@ fn current_profile(app: &App) -> profiles::Profile {
         }),
         history: slot.map(|s| s.prog.min_history),
         sources,
+        additive_blend: app.settings.additive_blend,
     }
 }
 
@@ -668,18 +678,34 @@ fn apply_advanced(app: &mut App, field: DspSlider) {
         return;
     }
 
+    if field == DspSlider::Gamma {
+        let gamma = app.settings.advanced.amplitude_gamma;
+        let active = app.settings.active_source;
+        if let Some(slot) = app.sources.get_mut(active) {
+            slot.amplitude_gamma = gamma;
+            let mut cfg = app.spectrum.clone();
+            cfg.amplitude_gamma = gamma;
+            slot.update_runtime(&cfg);
+        }
+        return;
+    }
+
     let mut new = app.spectrum.clone();
     copy_spectrum_field(&mut new, &app.settings.advanced, field);
     app.spectrum = new;
 
     if field.is_runtime() {
         for slot in &app.sources {
-            slot.update_runtime(&app.spectrum);
+            let mut cfg = app.spectrum.clone();
+            cfg.amplitude_gamma = slot.amplitude_gamma;
+            slot.update_runtime(&cfg);
         }
     } else {
         let history = app.sources.first().map_or(1, |s| s.prog.min_history);
         for slot in &mut app.sources {
-            slot.restart_dsp(&app.spectrum, history);
+            let mut cfg = app.spectrum.clone();
+            cfg.amplitude_gamma = slot.amplitude_gamma;
+            slot.restart_dsp(&cfg, history);
             slot.prog.bins = spectrum_output_bins(&app.spectrum) as u32;
         }
     }
@@ -717,7 +743,9 @@ fn copy_spectrum_field(dst: &mut SpectrumConfig, src: &SpectrumConfig, field: Ds
 fn restart_dsp(app: &mut App) {
     let history = app.sources.first().map_or(1, |s| s.prog.min_history);
     for slot in &app.sources {
-        slot.restart_dsp(&app.spectrum, history);
+        let mut cfg = app.spectrum.clone();
+        cfg.amplitude_gamma = slot.amplitude_gamma;
+        slot.restart_dsp(&cfg, history);
     }
     for slot in app.sources.iter_mut() {
         slot.prog.bins = spectrum_output_bins(&app.spectrum) as u32;
@@ -733,6 +761,7 @@ fn sync_active_source_settings(app: &mut App) {
         app.settings.saturation = slot.prog.saturation;
         app.settings.opacity = slot.opacity;
         app.settings.colormap = slot.colormap_name.clone();
+        app.settings.advanced.amplitude_gamma = slot.amplitude_gamma;
         let target_label = app.source_targets.iter()
             .find_map(|(label, value)| (value == &slot.target).then(|| label.clone()))
             .unwrap_or_else(|| slot.target.clone());
@@ -1002,6 +1031,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                             1.0,
                             1.0,
                             0.5,
+                            app.spectrum.amplitude_gamma,
                             history,
                             dev,
                             debug_profile,
@@ -1067,6 +1097,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 SettingsMessage::SetSharedBg(v) => {
                     app.settings.shared_bg = v;
                 }
+                SettingsMessage::SetAdditiveBlend(v) => {
+                    app.settings.additive_blend = v;
+                }
             }
             app.config_dirty = true;
             Task::none()
@@ -1088,6 +1121,7 @@ fn view(app: &App) -> Element<'_, Message> {
         dev,
         debug_profile,
         shared_bg: app.settings.shared_bg,
+        additive_blend: app.settings.additive_blend,
     };
     let spectrogram = container(
         Shader::new(multi).width(Length::Fill).height(Length::Fill)

@@ -67,6 +67,7 @@ echo "colormap inferno" | nc -U /tmp/vividspektrum.sock
 | `band-agg <name>` | `band-agg triangular` | Band aggregation: `nearest`, `triangular` |
 | `centered <bool>` | `centered true` | Centered analysis window |
 | `shared-bg <bool>` | `shared-bg true` | Use darkest colormap color as shared background |
+| `additive-blend <bool>` | `additive-blend true` | Additively combine source colors (sum toward white) |
 
 ### DSP Parameters (`set`)
 

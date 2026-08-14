@@ -191,6 +191,7 @@ pub enum SettingsMessage {
     SetTransform(Transform),
     SetCentered(bool),
     SetSharedBg(bool),
+    SetAdditiveBlend(bool),
 }
 
 pub struct SettingsState {
@@ -213,6 +214,7 @@ pub struct SettingsState {
     pub library_name: String,
     pub colormap_stops: Vec<(f32, f32, f32, f32)>,
     pub shared_bg: bool,
+    pub additive_blend: bool,
     pub error_msg: Option<String>,
 }
 
@@ -249,6 +251,7 @@ impl SettingsState {
             library_name: String::new(),
             colormap_stops: Vec::new(),
             shared_bg: true,
+            additive_blend: false,
             error_msg: None,
         }
     }
@@ -387,6 +390,13 @@ impl SettingsState {
             ]
             .align_y(Alignment::Center),
             toggler(self.shared_bg).on_toggle(SettingsMessage::SetSharedBg),
+            row![
+                text("Additive blend").size(12),
+                Space::new().width(Length::Fill),
+                info_icon("Additively combine source colors. Overlapping signals sum toward white instead of alpha-blending."),
+            ]
+            .align_y(Alignment::Center),
+            toggler(self.additive_blend).on_toggle(SettingsMessage::SetAdditiveBlend),
             label_row("Overlay", "Optional frequency-line overlays (e.g. A440, guitar tuning). + and - shift all lines by one semitone."),
             row![
                 pick_list(overlays, Some(self.overlay.clone()), SettingsMessage::SetOverlay).width(Length::Fill),

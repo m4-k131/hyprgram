@@ -28,7 +28,7 @@ struct Uniforms {
     bg_r: f32,
     bg_g: f32,
     bg_b: f32,
-    _pad0: f32,
+    additive_blend: u32,
     _pad1: f32,
 }
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -89,6 +89,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             overlay_alpha = max(overlay_alpha, 1.0 - dist / u.overlay_thickness);
         }
     }
+    if (u.additive_blend == 1u) {
+        let signal_alpha = smoothstep(0.0, 0.03, mag) * u.opacity;
+        if (overlay_alpha > 0.0) {
+            c = mix(c, u.overlay_color.rgb, overlay_alpha * u.overlay_color.a);
+        }
+        return vec4(c * signal_alpha, signal_alpha);
+    }
     if (u.shared_bg == 1u) {
         let bg = vec3(u.bg_r, u.bg_g, u.bg_b);
         let signal_alpha = smoothstep(0.0, 0.03, mag) * u.opacity;
@@ -129,7 +136,7 @@ struct Uniforms {
     bg_r: f32,
     bg_g: f32,
     bg_b: f32,
-    _pad0: f32,
+    additive_blend: u32,
     _pad1: f32,
 }
 
@@ -529,7 +536,7 @@ impl shader::Primitive for SpectrogramPrimitive {
             bg_r: 0.0,
             bg_g: 0.0,
             bg_b: 0.0,
-            _pad0: 0.0,
+            additive_blend: 0,
             _pad1: 0.0,
         };
         queue.write_buffer(&pipeline.uniform, 0, bytemuck::bytes_of(&u));
@@ -617,6 +624,7 @@ pub struct MultiSpectrogramProgram {
     pub dev: SpectrogramDevConfig,
     pub debug_profile: bool,
     pub shared_bg: bool,
+    pub additive_blend: bool,
 }
 
 pub struct SourceLayer {
@@ -639,6 +647,7 @@ pub struct MultiSpectrogramPrimitive {
     dev: SpectrogramDevConfig,
     debug_profile: bool,
     shared_bg: bool,
+    additive_blend: bool,
 }
 
 impl fmt::Debug for MultiSpectrogramPrimitive {
@@ -1065,7 +1074,7 @@ impl shader::Primitive for MultiSpectrogramPrimitive {
                 bg_r,
                 bg_g,
                 bg_b,
-                _pad0: 0.0,
+                additive_blend: if self.additive_blend { 1 } else { 0 },
                 _pad1: 0.0,
             };
             queue.write_buffer(&gpu.uniform, 0, bytemuck::bytes_of(&u));
@@ -1163,6 +1172,7 @@ impl<Message: 'static> shader::Program<Message> for MultiSpectrogramProgram {
             dev: self.dev,
             debug_profile: self.debug_profile,
             shared_bg: self.shared_bg,
+            additive_blend: self.additive_blend,
         }
     }
     fn mouse_interaction(
