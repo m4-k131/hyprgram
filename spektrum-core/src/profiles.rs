@@ -509,6 +509,7 @@ mod tests {
             image: None,
             history: None,
             sources: Vec::new(),
+            additive_blend: false,
         };
         let cfg = profile.to_image_config();
         assert_eq!(cfg.width, 800);
@@ -533,6 +534,7 @@ mod tests {
             }),
             history: None,
             sources: Vec::new(),
+            additive_blend: false,
         };
         let cfg = profile.to_image_config();
         assert_eq!(cfg.width, 1920);
