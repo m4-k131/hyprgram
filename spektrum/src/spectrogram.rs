@@ -94,7 +94,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         if (overlay_alpha > 0.0) {
             c = mix(c, u.overlay_color.rgb, overlay_alpha * u.overlay_color.a);
         }
-        return vec4(c * signal_alpha, signal_alpha);
+        return vec4(c * signal_alpha, 0.0);
     }
     if (u.shared_bg == 1u) {
         let bg = vec3(u.bg_r, u.bg_g, u.bg_b);
@@ -105,13 +105,19 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             return vec4(final_color, 1.0);
         } else {
             let layer_color = mix(c, u.overlay_color.rgb, overlay_alpha * u.overlay_color.a);
-            return vec4(layer_color, signal_alpha);
+            return vec4(layer_color * signal_alpha, signal_alpha);
         }
+    }
+    if (u.shared_bg == 0u && u.is_first == 1u) {
+        let signal_alpha = smoothstep(0.0, 0.03, mag) * u.opacity;
+        let signal_color = mix(vec3(0.0), c, signal_alpha);
+        let final_color = mix(signal_color, u.overlay_color.rgb, overlay_alpha * u.overlay_color.a);
+        return vec4(final_color, u.opacity);
     }
     if (overlay_alpha > 0.0) {
         c = mix(c, u.overlay_color.rgb, overlay_alpha * u.overlay_color.a);
     }
-    return vec4(c, u.opacity);
+    return vec4(c * u.opacity, u.opacity);
 }
 "#;
 
@@ -368,7 +374,7 @@ impl shader::Pipeline for SpectrogramGpu {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -832,7 +838,7 @@ impl shader::Pipeline for MultiSpectrogramGpu {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
