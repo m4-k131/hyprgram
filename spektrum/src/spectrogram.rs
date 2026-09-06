@@ -91,10 +91,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
     if (u.additive_blend == 1u && u.is_first != 1u) {
         let signal_alpha = smoothstep(0.0, 0.03, mag) * u.opacity;
+        var result = c * signal_alpha;
         if (overlay_alpha > 0.0) {
-            c = mix(c, u.overlay_color.rgb, overlay_alpha * u.overlay_color.a);
+            result = result + u.overlay_color.rgb * overlay_alpha * u.overlay_color.a;
         }
-        return vec4(c * signal_alpha, 0.0);
+        return vec4(result, 0.0);
     }
     if (u.shared_bg == 1u) {
         let bg = vec3(u.bg_r, u.bg_g, u.bg_b);

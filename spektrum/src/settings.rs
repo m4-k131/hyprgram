@@ -29,12 +29,12 @@ impl DspSlider {
             DspSlider::HopSize => "Time step / scroll speed",
             DspSlider::LogBins => "Log frequency bins",
             DspSlider::FMin => "Freq min (Hz)",
-            DspSlider::FMax => "Freq max (Hz)",
-            DspSlider::DbFloor => "dB floor",
-            DspSlider::DbCeil => "dB ceil",
-            DspSlider::Smoothing => "Freq smoothing",
-            DspSlider::Gamma => "Amplitude gamma",
-            DspSlider::TemporalAlpha => "Temporal alpha",
+            DspSlider::FMax => "Maximum frequency (Hz)",
+            DspSlider::DbFloor => "Minimum magnitude (dB)",
+            DspSlider::DbCeil => "Maximum magnitude (dB)",
+            DspSlider::Smoothing => "Frequency-domain smoothing",
+            DspSlider::Gamma => "Amplitude power curve",
+            DspSlider::TemporalAlpha => "Temporal blend (new column weight)",
             DspSlider::PeakDecay => "Peak hold decay",
             DspSlider::CqtBins => "CQT bins / octave",
             DspSlider::FreqScaleExp => "Freq scale exp",
@@ -136,6 +136,34 @@ fn info_icon<'a>(tip: &'a str) -> Element<'a, SettingsMessage> {
     .into()
 }
 
+fn section_header<'a>(title: &'a str, tip: &'a str) -> Element<'a, SettingsMessage> {
+    row![
+        text(title).size(14).style(|_theme: &Theme| text::Style {
+            color: Some(iced::Color::from_rgb8(140, 160, 210)),
+            ..Default::default()
+        }),
+        Space::new().width(Length::Fill),
+        info_icon(tip),
+    ]
+    .align_y(Alignment::Center)
+    .into()
+}
+
+fn section_box<'a>(content: Element<'a, SettingsMessage>) -> Element<'a, SettingsMessage> {
+    container(content)
+        .padding(10)
+        .style(|_theme: &Theme| container::Style {
+            background: Some(iced::Color::from_rgb8(28, 28, 34).into()),
+            border: iced::Border {
+                color: iced::Color::from_rgb8(50, 50, 60),
+                width: 1.0,
+                radius: 6.0.into(),
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
 fn label_row<'a>(label: &'a str, tip: &'a str) -> Element<'a, SettingsMessage> {
     row![
         text(label).size(12),
@@ -169,6 +197,12 @@ pub enum SettingsMessage {
     SetOverlay(String),
     OverlayShift(i32),
     SetSource(String),
+    SetSourceFor(usize, String),
+    SetContrastFor(usize, f32),
+    SetSaturationFor(usize, f32),
+    SetOpacityFor(usize, f32),
+    SetAmplitudeGammaFor(usize, f32),
+    SetColormapFor(usize, String),
     AddSource,
     RemoveSource(usize),
     SelectSource(usize),
@@ -209,6 +243,12 @@ pub struct SettingsState {
     pub source: String,
     pub active_source: usize,
     pub source_labels: Vec<String>,
+    pub source_selections: Vec<String>,
+    pub source_contrasts: Vec<f32>,
+    pub source_saturations: Vec<f32>,
+    pub source_opacities: Vec<f32>,
+    pub source_gammas: Vec<f32>,
+    pub source_colormaps: Vec<String>,
     pub width: f32,
     pub advanced: SpectrumConfig,
     pub history: f32,
@@ -233,13 +273,14 @@ impl SettingsState {
         spectrum: &SpectrumConfig,
         history: f32,
     ) -> Self {
+        let colormap_str: String = colormap.into();
         Self {
             open,
             contrast,
             saturation,
             opacity: 1.0,
             amplitude_gamma: spectrum.amplitude_gamma,
-            colormap: colormap.into(),
+            colormap: colormap_str.clone(),
             profile: profile.into(),
             dsp_settings: dsp_settings.into(),
             overlay: overlay.into(),
@@ -247,6 +288,12 @@ impl SettingsState {
             source: source.into(),
             active_source: 0,
             source_labels: vec!["Source 1".to_string()],
+            source_selections: vec![String::new()],
+            source_contrasts: vec![contrast],
+            source_saturations: vec![saturation],
+            source_opacities: vec![1.0],
+            source_gammas: vec![spectrum.amplitude_gamma],
+            source_colormaps: vec![colormap_str],
             width: 280.0,
             advanced: spectrum.clone(),
             history,
@@ -346,70 +393,19 @@ impl SettingsState {
             text("").into()
         };
 
-        let controls = column![
-            text("Right-click or press M to toggle this menu.").size(11),
-            if paused { text("Spectrogram paused — press Space to resume.").size(12) } else { text("") },
-            label_row("Profile", "A profile combines sources, colors, overlay, and DSP settings."),
-            row![
-                pick_list(profiles, Some(self.profile.clone()), SettingsMessage::SetProfile).width(Length::Fill),
-                button("…").on_press(SettingsMessage::OpenManager(LibraryManager::Profiles)),
-            ].spacing(6),
-            text("Sources · colors · overlay · DSP").size(11),
-            iced::widget::rule::horizontal(1),
-            text("Sources").size(14),
-            self.source_list_view(),
-            label_row("Colormap", "Color map used to map magnitude to color."),
-            row![
-                pick_list(colormaps, Some(self.colormap.clone()), SettingsMessage::SetColormap).width(Length::Fill),
-                button("…").on_press(SettingsMessage::OpenManager(LibraryManager::Colormaps)),
-            ].spacing(6),
-            row![
-                text(format!("Contrast {:.2}", self.contrast)).size(12),
-                Space::new().width(Length::Fill),
-                info_icon("GPU contrast. 1.0 is neutral, >1 increases, <1 decreases."),
-            ]
-            .align_y(Alignment::Center),
-            slider(0.0f32..=3.0f32, self.contrast, SettingsMessage::SetContrast).step(0.05_f32),
-            row![
-                text(format!("Saturation {:.2}", self.saturation)).size(12),
-                Space::new().width(Length::Fill),
-                info_icon("GPU saturation. 0 = grayscale, 1 = normal, >1 boosted."),
-            ]
-            .align_y(Alignment::Center),
-            slider(0.0f32..=3.0f32, self.saturation, SettingsMessage::SetSaturation).step(0.05_f32),
-            row![
-                text(format!("Opacity {:.2}", self.opacity)).size(12),
-                Space::new().width(Length::Fill),
-                info_icon("Layer opacity for alpha blending. 1.0 = fully opaque, 0.0 = invisible."),
-            ]
-            .align_y(Alignment::Center),
-            slider(0.0f32..=1.0f32, self.opacity, SettingsMessage::SetOpacity).step(0.05_f32),
-            row![
-                text(format!("Amplitude gamma {:.2}", self.amplitude_gamma)).size(12),
-                Space::new().width(Length::Fill),
-                info_icon("Per-source amplitude power curve. <1 brightens quiet parts, >1 darkens them."),
-            ]
-            .align_y(Alignment::Center),
-            slider(0.0f32..=2.0f32, self.amplitude_gamma, SettingsMessage::SetAmplitudeGamma).step(0.05_f32),
-            label_row("Audio source", "PipeWire/PulseAudio capture source for this source slot."),
-            pick_list(sources, Some(self.source.clone()), SettingsMessage::SetSource)
-                .text_size(11)
-                .width(Length::Fill),
-            iced::widget::rule::horizontal(1),
-            text("Global").size(14),
+        let global_section = section_box(column![
+            section_header("Global", "Settings shared across all sources."),
             row![
                 text("Shared background").size(12),
                 Space::new().width(Length::Fill),
                 info_icon("Use the darkest colormap color as a shared background. Prevents over-darkening when stacking multiple sources."),
-            ]
-            .align_y(Alignment::Center),
+            ].align_y(Alignment::Center),
             toggler(self.shared_bg).on_toggle(SettingsMessage::SetSharedBg),
             row![
                 text("Additive blend").size(12),
                 Space::new().width(Length::Fill),
                 info_icon("Additively combine source colors. Overlapping signals sum toward white instead of alpha-blending."),
-            ]
-            .align_y(Alignment::Center),
+            ].align_y(Alignment::Center),
             toggler(self.additive_blend).on_toggle(SettingsMessage::SetAdditiveBlend),
             label_row("Overlay", "Optional frequency-line overlays (e.g. A440, guitar tuning). + and - shift all lines by one semitone."),
             row![
@@ -418,7 +414,10 @@ impl SettingsState {
                 button("-").on_press(SettingsMessage::OverlayShift(-1)),
             ].spacing(6),
             shift_text,
-            text("DSP").size(14),
+        ].spacing(6).into());
+
+        let dsp_section = section_box(column![
+            section_header("DSP", "Spectral analysis parameters shared by all sources."),
             label_row("DSP settings", "Reusable DSP slider presets. Applying one does not change profile colors, overlay, or audio source."),
             row![
                 pick_list(dsp_settings, Some(self.dsp_settings.clone()), SettingsMessage::SetDspSettings).width(Length::Fill),
@@ -438,8 +437,7 @@ impl SettingsState {
                     .on_toggle(SettingsMessage::SetCentered),
                 Space::new().width(Length::Fill),
                 info_icon("Center the FFT window. Adds latency but reduces frame-boundary artifacts."),
-            ]
-            .align_y(Alignment::Center),
+            ].align_y(Alignment::Center),
             self.slider_row(DspSlider::WindowSize),
             self.slider_row(DspSlider::HopSize),
             if self.advanced.transform == Transform::Stft {
@@ -465,8 +463,21 @@ impl SettingsState {
                 text("").into()
             },
             self.slider_row(DspSlider::History),
+        ].spacing(6).into());
+
+        let controls = column![
+            text("Right-click or press M to toggle this menu.").size(11),
+            if paused { text("Spectrogram paused — press Space to resume.").size(12) } else { text("") },
+            label_row("Profile", "A profile combines sources, colors, overlay, and DSP settings."),
+            row![
+                pick_list(profiles, Some(self.profile.clone()), SettingsMessage::SetProfile).width(Length::Fill),
+                button("…").on_press(SettingsMessage::OpenManager(LibraryManager::Profiles)),
+            ].spacing(6),
+            self.source_list_view(colormaps, sources),
+            global_section,
+            dsp_section,
         ]
-        .spacing(8)
+        .spacing(12)
         .padding(12);
 
         let panel = column![header, scrollable(controls).height(Length::Fill)]
@@ -557,14 +568,14 @@ impl SettingsState {
             .into()
     }
 
-    fn source_list_view<'a>(&'a self) -> Element<'a, SettingsMessage> {
-        let mut list = column![].spacing(4);
+    fn source_list_view<'a>(&'a self, colormaps: &'a [String], sources: &'a [String]) -> Element<'a, SettingsMessage> {
+        let mut list = column![].spacing(8);
         for (i, label) in self.source_labels.iter().enumerate() {
             let is_active = i == self.active_source;
             let label_text: Element<'a, SettingsMessage> = if is_active {
-                text(format!("▶ {label}")).size(12).into()
+                text(format!("▶ {label}")).size(13).into()
             } else {
-                text(format!("  {label}")).size(12).into()
+                text(format!("  {label}")).size(13).into()
             };
             let select_btn = if is_active {
                 button(label_text)
@@ -576,11 +587,51 @@ impl SettingsState {
             } else {
                 button("✕")
             };
-            list = list.push(
+            let cm = self.source_colormaps.get(i).cloned().unwrap_or_else(|| "magma".to_string());
+            let contrast = *self.source_contrasts.get(i).unwrap_or(&1.0);
+            let saturation = *self.source_saturations.get(i).unwrap_or(&1.0);
+            let opacity = *self.source_opacities.get(i).unwrap_or(&1.0);
+            let gamma = *self.source_gammas.get(i).unwrap_or(&0.5);
+            let audio_sel = self.source_selections.get(i).cloned().unwrap_or_default();
+            let source_block = column![
                 row![select_btn, Space::new().width(Length::Fill), remove_btn]
                     .spacing(6)
                     .align_y(Alignment::Center),
-            );
+                label_row("Audio source", "PipeWire/PulseAudio capture source for this source slot."),
+                pick_list(sources, Some(audio_sel), move |v| SettingsMessage::SetSourceFor(i, v))
+                    .text_size(11)
+                    .width(Length::Fill),
+                label_row("Colormap", "Color map used to map magnitude to color."),
+                row![
+                    pick_list(colormaps, Some(cm.clone()), move |v| SettingsMessage::SetColormapFor(i, v)).width(Length::Fill),
+                    button("…").on_press(SettingsMessage::OpenManager(LibraryManager::Colormaps)),
+                ].spacing(6),
+                row![
+                    text(format!("Contrast {:.2}", contrast)).size(12),
+                    Space::new().width(Length::Fill),
+                    info_icon("GPU contrast. 1.0 is neutral, >1 increases, <1 decreases."),
+                ].align_y(Alignment::Center),
+                slider(0.0f32..=3.0f32, contrast, move |v| SettingsMessage::SetContrastFor(i, v)).step(0.05_f32),
+                row![
+                    text(format!("Saturation {:.2}", saturation)).size(12),
+                    Space::new().width(Length::Fill),
+                    info_icon("GPU saturation. 0 = grayscale, 1 = normal, >1 boosted."),
+                ].align_y(Alignment::Center),
+                slider(0.0f32..=3.0f32, saturation, move |v| SettingsMessage::SetSaturationFor(i, v)).step(0.05_f32),
+                row![
+                    text(format!("Opacity {:.2}", opacity)).size(12),
+                    Space::new().width(Length::Fill),
+                    info_icon("Layer opacity for alpha blending. 1.0 = fully opaque, 0.0 = invisible."),
+                ].align_y(Alignment::Center),
+                slider(0.0f32..=1.0f32, opacity, move |v| SettingsMessage::SetOpacityFor(i, v)).step(0.05_f32),
+                row![
+                    text(format!("Amplitude gamma {:.2}", gamma)).size(12),
+                    Space::new().width(Length::Fill),
+                    info_icon("Per-source amplitude power curve. <1 brightens quiet parts, >1 darkens them."),
+                ].align_y(Alignment::Center),
+                slider(0.0f32..=2.0f32, gamma, move |v| SettingsMessage::SetAmplitudeGammaFor(i, v)).step(0.05_f32),
+            ].spacing(4);
+            list = list.push(section_box(source_block.into()));
         }
         list = list.push(
             row![button("+ Add source").on_press(SettingsMessage::AddSource)]

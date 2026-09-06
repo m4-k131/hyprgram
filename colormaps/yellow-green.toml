@@ -1,0 +1,56 @@
+name = "yellow-green"
+
+# Black → green, B rises at peaks (paired with yellow-red → overlap=yellow, double-peak=white)
+[[stops]]
+position = 0.0
+r = 0.0
+g = 0.0
+b = 0.0
+
+[[stops]]
+position = 0.15
+r = 0.0
+g = 0.10
+b = 0.0
+
+[[stops]]
+position = 0.3
+r = 0.0
+g = 0.25
+b = 0.0
+
+[[stops]]
+position = 0.45
+r = 0.0
+g = 0.45
+b = 0.0
+
+[[stops]]
+position = 0.6
+r = 0.0
+g = 0.65
+b = 0.0
+
+[[stops]]
+position = 0.75
+r = 0.0
+g = 0.85
+b = 0.05
+
+[[stops]]
+position = 0.88
+r = 0.0
+g = 1.0
+b = 0.15
+
+[[stops]]
+position = 0.95
+r = 0.0
+g = 1.0
+b = 0.3
+
+[[stops]]
+position = 1.0
+r = 0.0
+g = 1.0
+b = 0.5

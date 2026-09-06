@@ -177,12 +177,54 @@ pub fn builtin_profile(name: &str) -> Option<Profile> {
             ],
             additive_blend: false,
         }),
+        "additive-magenta" => Some(additive_profile("magenta-red", "magenta-blue")),
+        "additive-cyan" => Some(additive_profile("cyan-green", "cyan-blue")),
+        "additive-yellow" => Some(additive_profile("yellow-red", "yellow-green")),
         _ => None,
     }
 }
 
 pub fn builtin_profile_names() -> &'static [&'static str] {
-    &["medium_quality", "high_quality", "singing_practice"]
+    &["medium_quality", "high_quality", "singing_practice",
+      "additive-magenta", "additive-cyan", "additive-yellow"]
+}
+
+fn additive_profile(colormap_a: &str, colormap_b: &str) -> Profile {
+    Profile {
+        dsp: personal_dsp_settings(),
+        colors: ColorSettings {
+            colormap: colormap_a.to_string(),
+            contrast: 1.0,
+            saturation: 1.0,
+            overlay: "none".to_string(),
+        },
+        audio: AudioSettings::default(),
+        image: Some(ProfileImage {
+            width: 800,
+            height: 1440,
+            scroll_right_to_left: true,
+        }),
+        history: Some(512),
+        sources: vec![
+            SourceConfig {
+                source: None,
+                colormap: colormap_a.into(),
+                contrast: 2.0,
+                saturation: 1.0,
+                opacity: 0.85,
+                amplitude_gamma: 0.5,
+            },
+            SourceConfig {
+                source: None,
+                colormap: colormap_b.into(),
+                contrast: 2.0,
+                saturation: 1.0,
+                opacity: 0.85,
+                amplitude_gamma: 0.5,
+            },
+        ],
+        additive_blend: true,
+    }
 }
 
 pub fn user_profiles_dir() -> std::path::PathBuf {
@@ -485,10 +527,13 @@ mod tests {
 
     #[test]
     fn builtin_profiles_exist() {
-        assert_eq!(builtin_profile_names(), &["medium_quality", "high_quality", "singing_practice"]);
+        assert_eq!(builtin_profile_names(), &["medium_quality", "high_quality", "singing_practice", "additive-magenta", "additive-cyan", "additive-yellow"]);
         assert!(builtin_profile("medium_quality").is_some());
         assert!(builtin_profile("high_quality").is_some());
         assert!(builtin_profile("singing_practice").is_some());
+        assert!(builtin_profile("additive-magenta").is_some());
+        assert!(builtin_profile("additive-cyan").is_some());
+        assert!(builtin_profile("additive-yellow").is_some());
     }
 
     #[test]

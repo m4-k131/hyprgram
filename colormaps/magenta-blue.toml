@@ -1,0 +1,56 @@
+name = "magenta-blue"
+
+# Black → blue, G rises at peaks (paired with magenta-red → overlap=magenta, double-peak=white)
+[[stops]]
+position = 0.0
+r = 0.0
+g = 0.0
+b = 0.0
+
+[[stops]]
+position = 0.15
+r = 0.0
+g = 0.0
+b = 0.10
+
+[[stops]]
+position = 0.3
+r = 0.0
+g = 0.0
+b = 0.25
+
+[[stops]]
+position = 0.45
+r = 0.0
+g = 0.0
+b = 0.45
+
+[[stops]]
+position = 0.6
+r = 0.0
+g = 0.0
+b = 0.65
+
+[[stops]]
+position = 0.75
+r = 0.0
+g = 0.05
+b = 0.85
+
+[[stops]]
+position = 0.88
+r = 0.0
+g = 0.15
+b = 1.0
+
+[[stops]]
+position = 0.95
+r = 0.0
+g = 0.3
+b = 1.0
+
+[[stops]]
+position = 1.0
+r = 0.0
+g = 0.5
+b = 1.0
