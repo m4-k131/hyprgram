@@ -800,7 +800,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         let default_target = app.source_list.first().cloned().unwrap_or_else(|| "default output".to_string());
                         let (slot, _tx) = create_source_slot(
                             id,
-                            default_target,
+                            default_target.clone(),
                             &app.spectrum,
                             "magma",
                             1.0,
