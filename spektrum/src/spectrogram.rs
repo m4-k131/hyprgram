@@ -28,7 +28,7 @@ struct Uniforms {
     bg_r: f32,
     bg_g: f32,
     bg_b: f32,
-    _pad0: f32,
+    additive_blend: u32,
     _pad1: f32,
 }
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -89,6 +89,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             overlay_alpha = max(overlay_alpha, 1.0 - dist / u.overlay_thickness);
         }
     }
+    if (u.additive_blend == 1u && u.is_first != 1u) {
+        let signal_alpha = smoothstep(0.0, 0.03, mag) * u.opacity;
+        var result = c * signal_alpha;
+        if (overlay_alpha > 0.0) {
+            result = result + u.overlay_color.rgb * overlay_alpha * u.overlay_color.a;
+        }
+        return vec4(result, 0.0);
+    }
     if (u.shared_bg == 1u) {
         let bg = vec3(u.bg_r, u.bg_g, u.bg_b);
         let signal_alpha = smoothstep(0.0, 0.03, mag) * u.opacity;
@@ -98,13 +106,19 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             return vec4(final_color, 1.0);
         } else {
             let layer_color = mix(c, u.overlay_color.rgb, overlay_alpha * u.overlay_color.a);
-            return vec4(layer_color, signal_alpha);
+            return vec4(layer_color * signal_alpha, signal_alpha);
         }
+    }
+    if (u.shared_bg == 0u && u.is_first == 1u) {
+        let signal_alpha = smoothstep(0.0, 0.03, mag) * u.opacity;
+        let signal_color = mix(vec3(0.0), c, signal_alpha);
+        let final_color = mix(signal_color, u.overlay_color.rgb, overlay_alpha * u.overlay_color.a);
+        return vec4(final_color, u.opacity);
     }
     if (overlay_alpha > 0.0) {
         c = mix(c, u.overlay_color.rgb, overlay_alpha * u.overlay_color.a);
     }
-    return vec4(c, u.opacity);
+    return vec4(c * u.opacity, u.opacity);
 }
 "#;
 
@@ -129,7 +143,7 @@ struct Uniforms {
     bg_r: f32,
     bg_g: f32,
     bg_b: f32,
-    _pad0: f32,
+    additive_blend: u32,
     _pad1: f32,
 }
 
@@ -321,7 +335,7 @@ impl shader::Pipeline for SpectrogramGpu {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::R8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -361,7 +375,7 @@ impl shader::Pipeline for SpectrogramGpu {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -432,7 +446,7 @@ impl shader::Primitive for SpectrogramPrimitive {
         let cur_w = pipeline.texture.size().width;
         let cur_h = pipeline.texture.size().height;
         if cur_w != w || cur_h != h {
-            pipeline.texture = device.create_texture(&wgpu::TextureDescriptor {
+            let new_texture = device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("vividspektrum-spectrum"),
                 size: wgpu::Extent3d {
                     width: w,
@@ -443,9 +457,21 @@ impl shader::Primitive for SpectrogramPrimitive {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::R8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
+            let copy_w = cur_w.min(w);
+            let copy_h = cur_h.min(h);
+            if copy_w > 0 && copy_h > 0 {
+                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("vividspektrum-resize") });
+                encoder.copy_texture_to_texture(
+                    wgpu::TexelCopyTextureInfo { texture: &pipeline.texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                    wgpu::TexelCopyTextureInfo { texture: &new_texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                    wgpu::Extent3d { width: copy_w, height: copy_h, depth_or_array_layers: 1 },
+                );
+                queue.submit([encoder.finish()]);
+            }
+            pipeline.texture = new_texture;
             pipeline.texture_view = pipeline.texture.create_view(&wgpu::TextureViewDescriptor::default());
             pipeline.bind_group = make_bind_group(
                 device,
@@ -456,7 +482,6 @@ impl shader::Primitive for SpectrogramPrimitive {
                 &pipeline.cmap_view,
                 &pipeline.cmap_sampler,
             );
-            pipeline.write_row = 0;
         }
         let prev_write_row = pipeline.write_row;
         let mut last_y: Option<u32> = None;
@@ -529,7 +554,7 @@ impl shader::Primitive for SpectrogramPrimitive {
             bg_r: 0.0,
             bg_g: 0.0,
             bg_b: 0.0,
-            _pad0: 0.0,
+            additive_blend: 0,
             _pad1: 0.0,
         };
         queue.write_buffer(&pipeline.uniform, 0, bytemuck::bytes_of(&u));
@@ -617,6 +642,7 @@ pub struct MultiSpectrogramProgram {
     pub dev: SpectrogramDevConfig,
     pub debug_profile: bool,
     pub shared_bg: bool,
+    pub additive_blend: bool,
 }
 
 pub struct SourceLayer {
@@ -639,6 +665,7 @@ pub struct MultiSpectrogramPrimitive {
     dev: SpectrogramDevConfig,
     debug_profile: bool,
     shared_bg: bool,
+    additive_blend: bool,
 }
 
 impl fmt::Debug for MultiSpectrogramPrimitive {
@@ -686,7 +713,7 @@ fn create_source_gpu(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::R8Unorm,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
     let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -823,7 +850,7 @@ impl shader::Pipeline for MultiSpectrogramGpu {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -853,11 +880,15 @@ impl shader::Primitive for MultiSpectrogramPrimitive {
         _viewport: &shader::Viewport,
     ) {
         while pipeline.sources.len() < self.sources.len() {
-            pipeline.sources.push(create_source_gpu(
+            let mut new_gpu = create_source_gpu(
                 device,
                 &pipeline.bind_group_layout,
                 &pipeline.sampler,
-            ));
+            );
+            if let Some(max_wr) = pipeline.sources.iter().map(|g| g.write_row).max() {
+                new_gpu.write_row = max_wr;
+            }
+            pipeline.sources.push(new_gpu);
         }
         while pipeline.sources.len() > self.sources.len() {
             pipeline.sources.pop();
@@ -928,11 +959,9 @@ impl shader::Primitive for MultiSpectrogramPrimitive {
             let spectra_changed = gpu.spectra_ptr != new_ptr;
             if spectra_changed {
                 gpu.spectra_ptr = new_ptr;
-                gpu.write_row = 0;
-                gpu.scroll = 0.0;
             }
             if cur_w != w || cur_h != h || spectra_changed {
-                gpu.texture = device.create_texture(&wgpu::TextureDescriptor {
+                let new_texture = device.create_texture(&wgpu::TextureDescriptor {
                     label: Some("vividspektrum-spectrum-multi"),
                     size: wgpu::Extent3d {
                         width: w,
@@ -944,9 +973,22 @@ impl shader::Primitive for MultiSpectrogramPrimitive {
                     dimension: wgpu::TextureDimension::D2,
                     format: wgpu::TextureFormat::R8Unorm,
                     usage: wgpu::TextureUsages::TEXTURE_BINDING
-                        | wgpu::TextureUsages::COPY_DST,
+                        | wgpu::TextureUsages::COPY_DST
+                        | wgpu::TextureUsages::COPY_SRC,
                     view_formats: &[],
                 });
+                let copy_w = cur_w.min(w);
+                let copy_h = cur_h.min(h);
+                if copy_w > 0 && copy_h > 0 {
+                    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("vividspektrum-resize-multi") });
+                    encoder.copy_texture_to_texture(
+                        wgpu::TexelCopyTextureInfo { texture: &gpu.texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                        wgpu::TexelCopyTextureInfo { texture: &new_texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                        wgpu::Extent3d { width: copy_w, height: copy_h, depth_or_array_layers: 1 },
+                    );
+                    queue.submit([encoder.finish()]);
+                }
+                gpu.texture = new_texture;
                 gpu.texture_view =
                     gpu.texture.create_view(&wgpu::TextureViewDescriptor::default());
                 gpu.bind_group = make_bind_group(
@@ -958,7 +1000,6 @@ impl shader::Primitive for MultiSpectrogramPrimitive {
                     &gpu.cmap_view,
                     &gpu.cmap_sampler,
                 );
-                gpu.write_row = 0;
             }
 
             let mut last_y: Option<u32> = None;
@@ -1065,7 +1106,7 @@ impl shader::Primitive for MultiSpectrogramPrimitive {
                 bg_r,
                 bg_g,
                 bg_b,
-                _pad0: 0.0,
+                additive_blend: if self.additive_blend { 1 } else { 0 },
                 _pad1: 0.0,
             };
             queue.write_buffer(&gpu.uniform, 0, bytemuck::bytes_of(&u));
@@ -1097,10 +1138,12 @@ impl shader::Primitive for MultiSpectrogramPrimitive {
         }
 
         if pipeline.sources.len() > 1 {
-            let shared_scroll = pipeline.sources.iter()
-                .map(|gpu| gpu.scroll)
-                .fold(0.0f32, f32::max);
+            let max_write_row = pipeline.sources.iter()
+                .map(|gpu| gpu.write_row)
+                .fold(0u32, u32::max);
             for gpu in &mut pipeline.sources {
+                let h = gpu.texture.size().height.max(1);
+                let shared_scroll = ((max_write_row % h) as f32 + 1.0) / (h as f32);
                 gpu.scroll = shared_scroll;
                 let scroll_bytes = bytemuck::bytes_of(&shared_scroll);
                 queue.write_buffer(&gpu.uniform, 0, scroll_bytes);
@@ -1161,6 +1204,7 @@ impl<Message: 'static> shader::Program<Message> for MultiSpectrogramProgram {
             dev: self.dev,
             debug_profile: self.debug_profile,
             shared_bg: self.shared_bg,
+            additive_blend: self.additive_blend,
         }
     }
     fn mouse_interaction(

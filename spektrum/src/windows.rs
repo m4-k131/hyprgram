@@ -123,6 +123,7 @@ impl App {
             contrast,
             saturation,
             1.0,
+            spectrum.amplitude_gamma,
             history,
             dev,
             debug_profile,
@@ -148,6 +149,7 @@ impl App {
                 1.0,
                 1.0,
                 0.5,
+                spectrum.amplitude_gamma,
                 history,
                 dev,
                 debug_profile,
@@ -160,6 +162,12 @@ impl App {
             overlay_name.clone(), source, &spectrum, history as f32,
         );
         settings.source_labels = sources.iter().map(|s| s.label.clone()).collect();
+        settings.source_selections = sources.iter().map(|s| s.target.clone()).collect();
+        settings.source_contrasts = sources.iter().map(|s| s.prog.contrast).collect();
+        settings.source_saturations = sources.iter().map(|s| s.prog.saturation).collect();
+        settings.source_opacities = sources.iter().map(|s| s.opacity).collect();
+        settings.source_gammas = sources.iter().map(|s| s.amplitude_gamma).collect();
+        settings.source_colormaps = sources.iter().map(|s| s.colormap_name.clone()).collect();
 
         Self {
             sources,
@@ -185,6 +193,7 @@ fn create_source_slot(
     contrast: f32,
     saturation: f32,
     opacity: f32,
+    amplitude_gamma: f32,
     history: u32,
     dev: SpectrogramDevConfig,
     debug_profile: bool,
@@ -245,6 +254,7 @@ fn create_source_slot(
         opacity,
         colormap_name: colormap_name.to_string(),
         capture_name: String::new(),
+        amplitude_gamma,
     };
 
     let tx = slot.capture_tx.clone().unwrap();
@@ -306,7 +316,9 @@ fn apply_overlay(app: &mut App, name: &str) {
 fn restart_dsp(app: &mut App) {
     let history = app.sources.first().map_or(1, |s| s.prog.min_history);
     for slot in &app.sources {
-        slot.restart_dsp(&app.spectrum, history);
+        let mut cfg = app.spectrum.clone();
+        cfg.amplitude_gamma = slot.amplitude_gamma;
+        slot.restart_dsp(&cfg, history);
     }
     for slot in app.sources.iter_mut() {
         slot.prog.bins = spectrum_output_bins(&app.spectrum) as u32;
@@ -337,6 +349,26 @@ fn apply_colormap(app: &mut App, name: &str) {
             slot.update_colormap(lut, name);
         }
         app.settings.colormap = name.to_string();
+        if app.settings.source_colormaps.len() <= active {
+            app.settings.source_colormaps.resize(active + 1, String::new());
+        }
+        app.settings.source_colormaps[active] = name.to_string();
+    }
+}
+
+fn apply_colormap_for(app: &mut App, idx: usize, name: &str) {
+    if let Ok(cm) = resolve_colormap(name) {
+        let lut = Arc::new(cm.build_lut_rgba(256));
+        if let Some(slot) = app.sources.get_mut(idx) {
+            slot.update_colormap(lut, name);
+        }
+        if app.settings.source_colormaps.len() <= idx {
+            app.settings.source_colormaps.resize(idx + 1, String::new());
+        }
+        app.settings.source_colormaps[idx] = name.to_string();
+        if idx == app.settings.active_source {
+            app.settings.colormap = name.to_string();
+        }
     }
 }
 
@@ -387,6 +419,7 @@ fn apply_profile(app: &mut App, name: &str) {
                 sc.contrast,
                 sc.saturation,
                 sc.opacity,
+                sc.amplitude_gamma,
                 history,
                 dev,
                 debug_profile,
@@ -399,6 +432,7 @@ fn apply_profile(app: &mut App, name: &str) {
         app.settings.contrast = first.contrast;
         app.settings.saturation = first.saturation;
         app.settings.opacity = first.opacity;
+        app.settings.amplitude_gamma = first.amplitude_gamma;
         app.settings.colormap = first.colormap.clone();
     } else {
         while app.sources.len() > 1 {
@@ -413,7 +447,9 @@ fn apply_profile(app: &mut App, name: &str) {
         let saturation = app.args.saturation.unwrap_or(profile.colors.saturation);
         let colormap_name = app.args.colormap.clone().unwrap_or(profile.colors.colormap);
         for slot in &app.sources {
-            slot.restart_dsp(&spectrum, history);
+            let mut cfg = spectrum.clone();
+            cfg.amplitude_gamma = slot.amplitude_gamma;
+            slot.restart_dsp(&cfg, history);
         }
         for slot in app.sources.iter_mut() {
             slot.prog.bins = spectrum_output_bins(&spectrum) as u32;
@@ -444,9 +480,16 @@ fn apply_profile(app: &mut App, name: &str) {
     app.spectrum = spectrum;
     app.settings.profile = name.to_string();
     app.settings.dsp_settings = "custom".to_string();
+    app.settings.additive_blend = profile.additive_blend;
     app.settings.from_spectrum(&app.spectrum, history as f32);
     let overlay = app.args.overlay.clone().unwrap_or(profile.colors.overlay);
     apply_overlay(app, &overlay);
+    app.settings.source_selections = app.sources.iter().map(|s| s.target.clone()).collect();
+    app.settings.source_contrasts = app.sources.iter().map(|s| s.prog.contrast).collect();
+    app.settings.source_saturations = app.sources.iter().map(|s| s.prog.saturation).collect();
+    app.settings.source_opacities = app.sources.iter().map(|s| s.opacity).collect();
+    app.settings.source_gammas = app.sources.iter().map(|s| s.amplitude_gamma).collect();
+    app.settings.source_colormaps = app.sources.iter().map(|s| s.colormap_name.clone()).collect();
     sync_active_source_settings(app);
 }
 
@@ -466,6 +509,7 @@ fn current_profile(app: &App) -> profiles::Profile {
             contrast: s.prog.contrast,
             saturation: s.prog.saturation,
             opacity: s.prog.opacity,
+            amplitude_gamma: s.amplitude_gamma,
         }).collect()
     } else {
         Vec::new()
@@ -482,6 +526,7 @@ fn current_profile(app: &App) -> profiles::Profile {
         image: Some(profiles::ProfileImage { width: 800, height: 800, scroll_right_to_left: slot.map_or(true, |s| s.prog.dev.scroll_right_to_left) }),
         history: slot.map(|s| s.prog.min_history),
         sources,
+        additive_blend: app.settings.additive_blend,
     }
 }
 
@@ -492,6 +537,17 @@ fn apply_advanced(app: &mut App, field: DspSlider) {
         for slot in &mut app.sources {
             slot.prog.min_history = history;
             slot.set_history(history);
+        }
+        return;
+    }
+    if field == DspSlider::Gamma {
+        let gamma = app.settings.amplitude_gamma;
+        let active = app.settings.active_source;
+        if let Some(slot) = app.sources.get_mut(active) {
+            slot.amplitude_gamma = gamma;
+            let mut cfg = app.spectrum.clone();
+            cfg.amplitude_gamma = gamma;
+            slot.update_runtime(&cfg);
         }
         return;
     }
@@ -513,7 +569,9 @@ fn apply_advanced(app: &mut App, field: DspSlider) {
     }
     if field.is_runtime() {
         for slot in &app.sources {
-            slot.update_runtime(&app.spectrum);
+            let mut cfg = app.spectrum.clone();
+            cfg.amplitude_gamma = slot.amplitude_gamma;
+            slot.update_runtime(&cfg);
         }
     } else {
         restart_dsp(app);
@@ -527,7 +585,12 @@ fn sync_active_source_settings(app: &mut App) {
         app.settings.saturation = slot.prog.saturation;
         app.settings.opacity = slot.opacity;
         app.settings.colormap = slot.colormap_name.clone();
+        app.settings.amplitude_gamma = slot.amplitude_gamma;
         app.settings.source = slot.target.clone();
+        if app.settings.source_selections.len() <= active {
+            app.settings.source_selections.resize(active + 1, String::new());
+        }
+        app.settings.source_selections[active] = slot.target.clone();
     }
 }
 
@@ -592,7 +655,55 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     }
                     app.settings.opacity = value;
                 }
+                SettingsMessage::SetAmplitudeGamma(v) => {
+                    let active = app.settings.active_source;
+                    if let Some(slot) = app.sources.get_mut(active) {
+                        slot.amplitude_gamma = v;
+                        let mut cfg = app.spectrum.clone();
+                        cfg.amplitude_gamma = v;
+                        slot.update_runtime(&cfg);
+                    }
+                    app.settings.amplitude_gamma = v;
+                }
                 SettingsMessage::SetColormap(name) => apply_colormap(app, &name),
+                SettingsMessage::SetColormapStops(name, stops) => {
+                    if stops.len() < 2 {
+                        return Task::none();
+                    }
+                    app.settings.colormap = name.clone();
+                    app.settings.colormap_stops = stops.clone();
+                    let mut sorted = stops.clone();
+                    sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
+                    let colormap = spektrum_core::Colormap::new(&name, sorted);
+                    let lut = Arc::new(colormap.build_lut_rgba(256));
+                    let active = app.settings.active_source;
+                    if let Some(slot) = app.sources.get_mut(active) {
+                        slot.prog.colormap_lut = lut;
+                        slot.colormap_name = name;
+                    }
+                }
+                SettingsMessage::SaveColormapStops(name, stops) => {
+                    if stops.len() < 2 {
+                        return Task::none();
+                    }
+                    let colormap = spektrum_core::Colormap::new(&name, stops.clone());
+                    match spektrum_core::colormap::save_user_colormap(&name, &colormap) {
+                        Ok(()) => {
+                            app.settings.colormap = name.clone();
+                            app.settings.colormap_stops = stops.clone();
+                            let mut sorted = stops.clone();
+                            sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
+                            let lut = Arc::new(spektrum_core::Colormap::new(&name, sorted).build_lut_rgba(256));
+                            let active = app.settings.active_source;
+                            if let Some(slot) = app.sources.get_mut(active) {
+                                slot.prog.colormap_lut = lut;
+                                slot.colormap_name = name;
+                            }
+                            refresh_libraries(app);
+                        }
+                        Err(e) => eprintln!("[ipc] failed to save colormap: {e}"),
+                    }
+                }
                 SettingsMessage::SetProfile(name) => apply_profile(app, &name),
                 SettingsMessage::SetDspSettings(name) => apply_dsp_settings(app, &name),
                 SettingsMessage::SetOverlay(name) => apply_overlay(app, &name),
@@ -613,8 +724,73 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     if let Some(slot) = app.sources.get(active) {
                         slot.set_target(&source);
                     }
-                    app.settings.source = source;
+                    app.settings.source = source.clone();
+                    if app.settings.source_selections.len() <= active {
+                        app.settings.source_selections.resize(active + 1, String::new());
+                    }
+                    app.settings.source_selections[active] = source;
                 }
+                SettingsMessage::SetSourceFor(idx, source) => {
+                    if let Some(slot) = app.sources.get(idx) {
+                        slot.set_target(&source);
+                    }
+                    if app.settings.source_selections.len() <= idx {
+                        app.settings.source_selections.resize(idx + 1, String::new());
+                    }
+                    app.settings.source_selections[idx] = source;
+                }
+                SettingsMessage::SetContrastFor(idx, v) => {
+                    if let Some(slot) = app.sources.get_mut(idx) {
+                        slot.update_contrast(v);
+                    }
+                    if app.settings.source_contrasts.len() <= idx {
+                        app.settings.source_contrasts.resize(idx + 1, 1.0);
+                    }
+                    app.settings.source_contrasts[idx] = v;
+                    if idx == app.settings.active_source {
+                        app.settings.contrast = v;
+                    }
+                }
+                SettingsMessage::SetSaturationFor(idx, v) => {
+                    if let Some(slot) = app.sources.get_mut(idx) {
+                        slot.update_saturation(v);
+                    }
+                    if app.settings.source_saturations.len() <= idx {
+                        app.settings.source_saturations.resize(idx + 1, 1.0);
+                    }
+                    app.settings.source_saturations[idx] = v;
+                    if idx == app.settings.active_source {
+                        app.settings.saturation = v;
+                    }
+                }
+                SettingsMessage::SetOpacityFor(idx, v) => {
+                    if let Some(slot) = app.sources.get_mut(idx) {
+                        slot.update_opacity(v);
+                    }
+                    if app.settings.source_opacities.len() <= idx {
+                        app.settings.source_opacities.resize(idx + 1, 1.0);
+                    }
+                    app.settings.source_opacities[idx] = v;
+                    if idx == app.settings.active_source {
+                        app.settings.opacity = v;
+                    }
+                }
+                SettingsMessage::SetAmplitudeGammaFor(idx, v) => {
+                    if let Some(slot) = app.sources.get_mut(idx) {
+                        slot.amplitude_gamma = v;
+                        let mut cfg = app.spectrum.clone();
+                        cfg.amplitude_gamma = v;
+                        slot.update_runtime(&cfg);
+                    }
+                    if app.settings.source_gammas.len() <= idx {
+                        app.settings.source_gammas.resize(idx + 1, 0.5);
+                    }
+                    app.settings.source_gammas[idx] = v;
+                    if idx == app.settings.active_source {
+                        app.settings.amplitude_gamma = v;
+                    }
+                }
+                SettingsMessage::SetColormapFor(idx, name) => apply_colormap_for(app, idx, &name),
                 SettingsMessage::AddSource => {
                     if app.sources.len() < MAX_SOURCES {
                         let id = app.sources.len();
@@ -624,18 +800,25 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         let default_target = app.source_list.first().cloned().unwrap_or_else(|| "default output".to_string());
                         let (slot, _tx) = create_source_slot(
                             id,
-                            default_target,
+                            default_target.clone(),
                             &app.spectrum,
                             "magma",
                             1.0,
                             1.0,
                             0.5,
+                            app.spectrum.amplitude_gamma,
                             history,
                             dev,
                             debug_profile,
                         );
                         app.sources.push(slot);
                         app.settings.source_labels = app.sources.iter().map(|s| s.label.clone()).collect();
+                        app.settings.source_selections.push(default_target);
+                        app.settings.source_contrasts.push(1.0);
+                        app.settings.source_saturations.push(1.0);
+                        app.settings.source_opacities.push(0.5);
+                        app.settings.source_gammas.push(app.spectrum.amplitude_gamma);
+                        app.settings.source_colormaps.push("magma".to_string());
                     }
                 }
                 SettingsMessage::RemoveSource(idx) => {
@@ -646,6 +829,24 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                             slot.label = format!("Source {}", i + 1);
                         }
                         app.settings.source_labels = app.sources.iter().map(|s| s.label.clone()).collect();
+                        if app.settings.source_selections.len() > idx {
+                            app.settings.source_selections.remove(idx);
+                        }
+                        if app.settings.source_contrasts.len() > idx {
+                            app.settings.source_contrasts.remove(idx);
+                        }
+                        if app.settings.source_saturations.len() > idx {
+                            app.settings.source_saturations.remove(idx);
+                        }
+                        if app.settings.source_opacities.len() > idx {
+                            app.settings.source_opacities.remove(idx);
+                        }
+                        if app.settings.source_gammas.len() > idx {
+                            app.settings.source_gammas.remove(idx);
+                        }
+                        if app.settings.source_colormaps.len() > idx {
+                            app.settings.source_colormaps.remove(idx);
+                        }
                         if app.settings.active_source >= app.sources.len() {
                             app.settings.active_source = app.sources.len() - 1;
                         }
@@ -783,6 +984,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 SettingsMessage::SetSharedBg(v) => {
                     app.settings.shared_bg = v;
                 }
+                SettingsMessage::SetAdditiveBlend(v) => {
+                    app.settings.additive_blend = v;
+                }
             }
             Task::none()
         }
@@ -797,6 +1001,7 @@ fn view(app: &App) -> Element<'_, Message> {
         dev,
         debug_profile,
         shared_bg: app.settings.shared_bg,
+        additive_blend: app.settings.additive_blend,
     };
     let spectrogram = container(Shader::new(multi).width(Length::Fill).height(Length::Fill))
         .width(Length::Fill)

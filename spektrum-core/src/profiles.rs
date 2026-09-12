@@ -12,6 +12,8 @@ pub struct Profile {
     pub history: Option<u32>,
     #[serde(default)]
     pub sources: Vec<SourceConfig>,
+    #[serde(default)]
+    pub additive_blend: bool,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -22,6 +24,8 @@ pub struct SourceConfig {
     pub contrast: f32,
     pub saturation: f32,
     pub opacity: f32,
+    #[serde(default = "default_source_gamma")]
+    pub amplitude_gamma: f32,
 }
 
 impl Default for SourceConfig {
@@ -32,6 +36,7 @@ impl Default for SourceConfig {
             contrast: 1.0,
             saturation: 1.0,
             opacity: 1.0,
+            amplitude_gamma: 0.5,
         }
     }
 }
@@ -75,6 +80,7 @@ pub struct ProfileImage {
 fn default_width() -> u32 { 800 }
 fn default_height() -> u32 { 800 }
 fn default_scroll() -> bool { true }
+fn default_source_gamma() -> f32 { 0.5 }
 
 impl Profile {
     pub fn to_image_config(&self) -> SpectrogramImageConfig {
@@ -112,6 +118,7 @@ pub fn builtin_profile(name: &str) -> Option<Profile> {
             image: None,
             history: None,
             sources: Vec::new(),
+            additive_blend: false,
         }),
         "high_quality" => Some(Profile {
             dsp: personal_dsp_settings(),
@@ -129,6 +136,7 @@ pub fn builtin_profile(name: &str) -> Option<Profile> {
             }),
             history: None,
             sources: Vec::new(),
+            additive_blend: false,
         }),
         "singing_practice" => Some(Profile {
             dsp: {
@@ -156,6 +164,7 @@ pub fn builtin_profile(name: &str) -> Option<Profile> {
                     contrast: 2.05,
                     saturation: 1.1,
                     opacity: 1.0,
+                    amplitude_gamma: 0.5,
                 },
                 SourceConfig {
                     source: None,
@@ -163,15 +172,59 @@ pub fn builtin_profile(name: &str) -> Option<Profile> {
                     contrast: 2.35,
                     saturation: 1.05,
                     opacity: 0.55,
+                    amplitude_gamma: 0.5,
                 },
             ],
+            additive_blend: false,
         }),
+        "additive-magenta" => Some(additive_profile("magenta-red", "magenta-blue")),
+        "additive-cyan" => Some(additive_profile("cyan-green", "cyan-blue")),
+        "additive-yellow" => Some(additive_profile("yellow-red", "yellow-green")),
         _ => None,
     }
 }
 
 pub fn builtin_profile_names() -> &'static [&'static str] {
-    &["medium_quality", "high_quality", "singing_practice"]
+    &["medium_quality", "high_quality", "singing_practice",
+      "additive-magenta", "additive-cyan", "additive-yellow"]
+}
+
+fn additive_profile(colormap_a: &str, colormap_b: &str) -> Profile {
+    Profile {
+        dsp: personal_dsp_settings(),
+        colors: ColorSettings {
+            colormap: colormap_a.to_string(),
+            contrast: 1.0,
+            saturation: 1.0,
+            overlay: "none".to_string(),
+        },
+        audio: AudioSettings::default(),
+        image: Some(ProfileImage {
+            width: 800,
+            height: 1440,
+            scroll_right_to_left: true,
+        }),
+        history: Some(512),
+        sources: vec![
+            SourceConfig {
+                source: None,
+                colormap: colormap_a.into(),
+                contrast: 2.0,
+                saturation: 1.0,
+                opacity: 0.85,
+                amplitude_gamma: 0.5,
+            },
+            SourceConfig {
+                source: None,
+                colormap: colormap_b.into(),
+                contrast: 2.0,
+                saturation: 1.0,
+                opacity: 0.85,
+                amplitude_gamma: 0.5,
+            },
+        ],
+        additive_blend: true,
+    }
 }
 
 pub fn user_profiles_dir() -> std::path::PathBuf {
@@ -382,6 +435,29 @@ pub fn delete_user_dsp_settings(name: &str) -> Result<(), CoreError> {
         .map_err(|e| CoreError::Dsp(format!("failed to delete DSP settings: {e}")))
 }
 
+pub fn session_config_path() -> std::path::PathBuf {
+    config_dir().join("vividspektrum/session.toml")
+}
+
+pub fn save_session_config(profile: &Profile) -> Result<(), CoreError> {
+    let path = session_config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| CoreError::Dsp(format!("failed to create config directory: {e}")))?;
+    }
+    let text = toml::to_string_pretty(profile).map_err(|e| CoreError::Dsp(format!("failed to serialize session config: {e}")))?;
+    let temp = path.with_extension("toml.tmp");
+    std::fs::write(&temp, text).map_err(|e| CoreError::Dsp(format!("failed to write session config: {e}")))?;
+    std::fs::rename(temp, &path).map_err(|e| CoreError::Dsp(format!("failed to save session config: {e}")))
+}
+
+pub fn load_session_config() -> Option<Profile> {
+    let path = session_config_path();
+    if !path.exists() {
+        return None;
+    }
+    load_profile(&path).ok()
+}
+
 fn config_dir() -> std::path::PathBuf {
     std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config")))
@@ -451,10 +527,13 @@ mod tests {
 
     #[test]
     fn builtin_profiles_exist() {
-        assert_eq!(builtin_profile_names(), &["medium_quality", "high_quality", "singing_practice"]);
+        assert_eq!(builtin_profile_names(), &["medium_quality", "high_quality", "singing_practice", "additive-magenta", "additive-cyan", "additive-yellow"]);
         assert!(builtin_profile("medium_quality").is_some());
         assert!(builtin_profile("high_quality").is_some());
         assert!(builtin_profile("singing_practice").is_some());
+        assert!(builtin_profile("additive-magenta").is_some());
+        assert!(builtin_profile("additive-cyan").is_some());
+        assert!(builtin_profile("additive-yellow").is_some());
     }
 
     #[test]
@@ -475,6 +554,7 @@ mod tests {
             image: None,
             history: None,
             sources: Vec::new(),
+            additive_blend: false,
         };
         let cfg = profile.to_image_config();
         assert_eq!(cfg.width, 800);
@@ -499,6 +579,7 @@ mod tests {
             }),
             history: None,
             sources: Vec::new(),
+            additive_blend: false,
         };
         let cfg = profile.to_image_config();
         assert_eq!(cfg.width, 1920);
